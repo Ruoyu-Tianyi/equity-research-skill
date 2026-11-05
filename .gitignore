@@ -1,0 +1,29 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Runtime files
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+
+# Research inputs, private workpapers, and generated reports
+inputs/
+private/
+outputs/
+support/
+validation/
+*.xlsx
+*.xlsm
+*.xlsb
+*.xls
+*.docx
+*.pdf
+*.zip
+*.audit.json

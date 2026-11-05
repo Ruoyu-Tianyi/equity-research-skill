@@ -1,0 +1,7 @@
+# Model inspection
+openpyxl>=3.1
+# Editable Word assembly and image sizing
+python-docx>=1.2
+Pillow>=10
+# Optional when using scripts/chart_style.py
+matplotlib>=3.8
