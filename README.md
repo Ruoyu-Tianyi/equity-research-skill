@@ -1,6 +1,6 @@
 # A/H 股公司深度研究 Skill
 
-**v1.0.0** · [GitHub 仓库](https://github.com/Ruoyu-Tianyi/equity-research-skill)
+**v1.0.1** · [GitHub 仓库](https://github.com/Ruoyu-Tianyi/equity-research-skill)
 
 面向 A 股与港股中文公司深度研究：结合用户已有的 Excel 估值模型、截至指定日期可获得的行业与公司资料，生成可编辑 Word 和同版 PDF。技能目录为 [`skills/ah-equity-research`](skills/ah-equity-research)。
 

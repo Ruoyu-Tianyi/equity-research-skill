@@ -427,6 +427,9 @@ class ResearchEditorialLayout:
             _caption(self.doc.add_paragraph(f'表 {self.table_count}  {caption}', 'Caption'),self.theme)
         if header_fill is None: header_fill=self.theme.color_blocks
         table = self._table_shell(widths_cm)
+        # Word aligns the first cell text to the paragraph origin; compensate
+        # for its 4.5pt cell margin so the table outer edge matches the band.
+        _replace(table._tbl.tblPr, 'tblInd', _element('tblInd', w=90, type='dxa'))
         if keep_together is None: keep_together = len(rows)<=7
         inferred = ['left'] + ['right' if rows and all(_numeric(row[ci]) for row in rows) else 'left' for ci in range(1,n)]
         for ri, values in enumerate([list(headers)]+rows):
@@ -464,9 +467,15 @@ class ResearchEditorialLayout:
         return table
 
     def _picture(self, paragraph, path, width_cm, max_height_cm):
+        if width_cm <= .24 or max_height_cm <= 0:
+            raise ValueError('Figure dimensions must leave room for symmetric insets.')
         path = Path(path)
         with Image.open(path) as img: px_w, px_h = img.size
-        actual_width = min(width_cm, max_height_cm*px_w/px_h)
+        actual_width = min(width_cm-.24, max_height_cm*px_w/px_h)
+        paragraph.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        paragraph.paragraph_format.left_indent = Cm(.12)
+        paragraph.paragraph_format.right_indent = Cm(.12)
+        paragraph.paragraph_format.first_line_indent = Cm(0)
         paragraph.paragraph_format.space_after = Pt(1); paragraph.paragraph_format.space_before = Pt(0)
         paragraph.paragraph_format.line_spacing = 1
         run = paragraph.add_run(); picture = run.add_picture(str(path), width=Cm(actual_width))
@@ -478,7 +487,8 @@ class ResearchEditorialLayout:
         _caption(self.doc.add_paragraph(f'图 {number}  {caption}', 'Caption'),self.theme)
         p = self.doc.add_paragraph(); p.paragraph_format.keep_with_next = True
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        self._picture(p, path, width_cm or self.current_width_cm, max_height_cm)
+        self._picture(p, path, min(width_cm if width_cm is not None else self.current_width_cm,
+                                  self.current_width_cm), max_height_cm)
         self.source(source)
         self.manifest['figures'].append({'number':number,'caption':caption,'path':str(path),'layout':'full','internal_note':note})
         return number
