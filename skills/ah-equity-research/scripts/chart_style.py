@@ -18,6 +18,7 @@ from matplotlib import font_manager
 from matplotlib.ft2font import FT2Font
 from matplotlib.text import Text
 from matplotlib.ticker import FuncFormatter, MaxNLocator
+from matplotlib.transforms import Bbox
 
 PALETTE = ("#24445C", "#7892A5", "#AE9B74", "#BCC8D1")
 C = PALETTE
@@ -91,12 +92,23 @@ def _ensure_fonts() -> None:
         configure()
 
 
-def figure(*, wide: bool = False, height: float = 2.6, ncols: int = 1):
-    """Create a half-width or full-width figure, measured in inches."""
+def figure(*, wide: bool = False, height: float = 2.6, ncols: int = 1,
+           width_cm: float | None = None, height_cm: float | None = None,
+           font_size_pt: float = 8.75):
+    """Create at final report size. Explicit centimetres override legacy height.
+
+    Default widths are 8.085 cm (half column) and 17.06 cm (full column).
+    Pass the same target width to save() when compacting. Font sizes are points
+    at this physical output size, not a larger source chart later shrunk in Word.
+    """
     _ensure_fonts()
-    if ncols < 1 or height <= 0:
+    width_cm = width_cm if width_cm is not None else (17.06 if wide else 8.085)
+    height = height_cm / 2.54 if height_cm is not None else height
+    if ncols < 1 or height <= 0 or width_cm <= 0 or font_size_pt <= 0:
         raise ValueError("ncols and height must be positive")
-    fig, axes = plt.subplots(1, ncols, figsize=(6.9 if wide else 3.5, height), squeeze=False)
+    fig, axes = plt.subplots(1, ncols, figsize=(width_cm / 2.54, height), squeeze=False)
+    fig._research_target_width_cm = width_cm
+    fig._research_font_size_pt = font_size_pt
     return fig, axes[0] if ncols > 1 else axes[0, 0]
 
 
@@ -120,17 +132,64 @@ def legend(ax, *, ncol: int = 2, y: float = 1.25):
 
 
 def _visible_texts(fig) -> list[Text]:
+    # Matplotlib retains Text objects for ticks beyond the current limits, but
+    # Axis.draw() omits them. Do not misreport those dormant labels as overflow.
+    dormant = set()
+    for ax in fig.axes:
+        for axis in (ax.xaxis, ax.yaxis):
+            low, high = sorted(axis.get_view_interval())
+            for tick in axis.get_major_ticks() + axis.get_minor_ticks():
+                if not low - 1e-9 <= tick.get_loc() <= high + 1e-9:
+                    dormant.update((id(tick.label1), id(tick.label2)))
     return [item for item in fig.findobj(Text)
-            if item.get_visible() and item.get_text().strip()]
+            if item.get_visible() and item.get_text().strip() and id(item) not in dormant]
 
 
-def _normalize_fonts(fig) -> None:
+def _normalize_fonts(fig, font_size_pt: float | None = None) -> None:
     # Rebuild properties to clear explicit per-artist font-file overrides.
     for item in _visible_texts(fig):
         old = item.get_fontproperties()
         item.set_fontproperties(font_manager.FontProperties(
             family=FONT_FAMILY, style=old.get_style(), variant=old.get_variant(),
-            weight=old.get_weight(), stretch=old.get_stretch(), size=old.get_size()))
+            weight=old.get_weight(), stretch=old.get_stretch(),
+            size=font_size_pt if font_size_pt is not None else old.get_size()))
+
+
+def _compact_bounds(fig, width_inches: float, padding_inches: float,
+                    font_size_pt: float | None,
+                    height_inches: float | None = None) -> Bbox:
+    """Reflow the source figure to a tight, exact-width vector export boundary.
+
+    Iteration changes the drawing canvas, never raster pixels or font point size.
+    A chart whose fixed labels cannot fit must be redesigned instead of scaled.
+    """
+    for _ in range(20):
+        _normalize_fonts(fig, font_size_pt)
+        fig.canvas.draw()
+        bounds = fig.get_tightbbox(fig.canvas.get_renderer())
+        actual = bounds.width + 2 * padding_inches
+        error = width_inches - actual
+        height_error = (height_inches - bounds.height - 2 * padding_inches
+                        if height_inches is not None else 0)
+        if abs(error) <= .002 and abs(height_error) <= .002:
+            break
+        current = fig.get_figwidth()
+        proposed = current * width_inches / actual
+        if proposed < .35:
+            raise ChartValidationError("Fixed chart labels exceed the requested width; reflow the chart")
+        fig.set_figwidth(proposed)
+        if height_inches is not None:
+            proposed_height = fig.get_figheight() * height_inches / (bounds.height + 2 * padding_inches)
+            if proposed_height < .35:
+                raise ChartValidationError("Fixed chart labels exceed the requested height; reflow the chart")
+            fig.set_figheight(proposed_height)
+    if abs(error) > .01 or abs(height_error) > .01:
+        raise ChartValidationError("Could not fit content at the requested dimensions without changing font size")
+    center = (bounds.x0 + bounds.x1) / 2
+    out_height = height_inches if height_inches is not None else bounds.height + 2 * padding_inches
+    center_y = (bounds.y0 + bounds.y1) / 2
+    return Bbox.from_bounds(center - width_inches / 2, center_y - out_height / 2,
+                            width_inches, out_height)
 
 
 def _svg_font_check(svg: str) -> dict:
@@ -151,17 +210,31 @@ def _svg_font_check(svg: str) -> dict:
 
 def save(fig, output_stem: str | Path, *, dpi: int = 320,
          layout: dict[str, float] | None = None, strict: bool = True,
-         close: bool = True) -> dict:
+         close: bool = True, final_width_cm: float | None = None,
+         final_height_cm: float | None = None,
+         font_size_pt: float | None = 8.75, compact: bool = True,
+         pad_cm: float = .08) -> dict:
     """Export stem.png, stem.svg and stem.audit.json; check fonts and overflow.
 
     output_stem has no extension. layout accepts subplots_adjust arguments.
     Failure still leaves preview files and an audit, then raises when strict=True.
-    Checks cover missing glyphs and text outside the canvas, not label collisions,
-    data accuracy or readability after insertion into a document.
+    compact reflows the source figure to a tight vector-content boundary while
+    preserving font points and an exact final_width_cm. Insert at that width in
+    Word, without a smaller maximum-height constraint. No raster cropping occurs.
+    Checks cover missing glyphs and text outside the export boundary, not label
+    collisions, data accuracy or final-page readability; visually review all three.
     """
     _ensure_fonts()
     if dpi < 300:
         raise ValueError("Use dpi >= 300 for the PNG report artifact")
+    if pad_cm < 0 or (font_size_pt is not None and font_size_pt <= 0):
+        raise ValueError("Padding must be nonnegative and font size positive")
+    final_width_cm = (final_width_cm if final_width_cm is not None else
+                      getattr(fig, "_research_target_width_cm", fig.get_figwidth() * 2.54))
+    if final_width_cm <= 0:
+        raise ValueError("Final width must be positive")
+    if final_height_cm is not None and final_height_cm <= 0:
+        raise ValueError("Final height must be positive")
     stem = Path(output_stem).expanduser().resolve()
     if stem.suffix:
         raise ValueError("output_stem must have no file extension")
@@ -171,24 +244,34 @@ def save(fig, output_stem: str | Path, *, dpi: int = 320,
     try:
         if layout:
             fig.subplots_adjust(**layout)
+        if not compact:
+            fig.set_figwidth(final_width_cm / 2.54)
+            if final_height_cm is not None:
+                fig.set_figheight(final_height_cm / 2.54)
         fig.set_dpi(dpi)
         with warnings.catch_warnings(record=True) as captured:
             warnings.simplefilter("always")
-            _normalize_fonts(fig)
+            _normalize_fonts(fig, font_size_pt)
             fig.canvas.draw()
             # A first draw may create additional tick labels.
-            _normalize_fonts(fig)
+            _normalize_fonts(fig, font_size_pt)
             fig.canvas.draw()
+            export_bounds = (_compact_bounds(fig, final_width_cm / 2.54,
+                                              pad_cm / 2.54, font_size_pt,
+                                              final_height_cm / 2.54 if final_height_cm is not None else None)
+                             if compact else Bbox.from_bounds(0, 0,
+                                                              fig.get_figwidth(), fig.get_figheight()))
             renderer = fig.canvas.get_renderer()
             overflow = []
+            pixel_bounds = export_bounds.transformed(fig.dpi_scale_trans)
             for item in _visible_texts(fig):
                 box = item.get_window_extent(renderer)
-                if (box.x0 < -2 or box.y0 < -2 or box.x1 > fig.bbox.width + 2
-                        or box.y1 > fig.bbox.height + 2):
+                if (box.x0 < pixel_bounds.x0 - 2 or box.y0 < pixel_bounds.y0 - 2
+                        or box.x1 > pixel_bounds.x1 + 2 or box.y1 > pixel_bounds.y1 + 2):
                     overflow.append({"text": item.get_text(),
                                      "bbox_pixels": [float(x) for x in box.extents]})
-            fig.savefig(png, dpi=dpi, bbox_inches=None)
-            fig.savefig(svg_path, bbox_inches=None)
+            fig.savefig(png, dpi=dpi, bbox_inches=export_bounds, pad_inches=0)
+            fig.savefig(svg_path, bbox_inches=export_bounds, pad_inches=0)
         glyph_warnings = sorted({str(w.message) for w in captured
                                  if "glyph" in str(w.message).lower()
                                  and "missing" in str(w.message).lower()})
@@ -199,6 +282,13 @@ def save(fig, output_stem: str | Path, *, dpi: int = 320,
             "scope": "Font and canvas-boundary checks only; human visual review remains required.",
             "family": FONT_FAMILY, "font_files": _FONT_FILES.copy(),
             "palette": list(PALETTE), "dimensions_inches": list(fig.get_size_inches()),
+            "output_dimensions_cm": [export_bounds.width * 2.54, export_bounds.height * 2.54],
+            "target_width_cm": final_width_cm,
+            "target_height_cm": final_height_cm,
+            "target_font_size_pt": font_size_pt,
+            "observed_font_sizes_pt": sorted({float(t.get_fontsize()) for t in _visible_texts(fig)}),
+            "compact_vector_export": compact, "content_padding_cm": pad_cm if compact else None,
+            "export_bounds_inches": [float(v) for v in export_bounds.extents],
             "png_dpi": dpi, "text_count": len(_visible_texts(fig)),
             "canvas_text_overflow": overflow, "missing_glyph_warnings": glyph_warnings,
             **font_check,

@@ -31,6 +31,7 @@ class Theme:
     muted: str = '5B6B77'
     rule: str = 'C8D2D9'
     pale: str = 'EDF2F5'
+    table_header_fill: str = 'E8EFF4'
     key_fill: str = 'E1EAF0'
     zebra: str = 'F7F9FA'
     lead_east_asia: str = 'KaiTi'
@@ -87,8 +88,9 @@ def _fill(paragraph, color):
 
 def _panel(paragraph, fill, accent=None):
     _fill(paragraph, fill)
-    paragraph.paragraph_format.left_indent = Cm(.12)
-    paragraph.paragraph_format.right_indent = Cm(.06)
+    paragraph.paragraph_format.left_indent = Cm(0)
+    paragraph.paragraph_format.right_indent = Cm(0)
+    paragraph.paragraph_format.first_line_indent = Cm(0)
     if accent: _border(paragraph,'left',accent,10,5)
 
 
@@ -96,6 +98,9 @@ def _caption(paragraph, theme):
     # Paragraph shading fills the available width. Paired captions are inside
     # separate cells with a genuine unshaded spacer column between them.
     text=paragraph.text; paragraph.clear()
+    paragraph.paragraph_format.left_indent = Cm(0)
+    paragraph.paragraph_format.right_indent = Cm(0)
+    paragraph.paragraph_format.first_line_indent = Cm(0)
     paragraph.paragraph_format.line_spacing=Pt(17 if theme.color_blocks else 14)
     paragraph.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.LEFT
     m=re.match(r'^([图表]\s*\d+)\s+(.*)$',text)
@@ -172,9 +177,13 @@ class ResearchEditorialLayout:
             pf.widow_control = True; pf.keep_together = False
             pf.keep_with_next = name.startswith('Heading') or name == 'Caption'
             pp = s.element.get_or_add_pPr(); _replace(pp, 'snapToGrid', _element('snapToGrid', val='0'))
+            _replace(pp, 'overflowPunct', _element('overflowPunct', val='0'))
             border = pp.find(qn('w:pBdr'))
             if border is not None: pp.remove(border)
         self.doc.styles['Normal'].paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        self.doc.styles['Normal'].paragraph_format.left_indent = Cm(.12)
+        self.doc.styles['Normal'].paragraph_format.right_indent = Cm(.12)
+        self.doc.styles['Normal'].paragraph_format.first_line_indent = Cm(0)
 
     def _configure_section(self, section):
         t = self.theme
@@ -438,13 +447,15 @@ class ResearchEditorialLayout:
             for ci, value in enumerate(values):
                 cell = row.cells[ci]; self._cell(cell, widths_cm[ci], 4.5, 2.3)
                 p = cell.paragraphs[0]; p.paragraph_format.space_after = Pt(0); p.paragraph_format.space_before = Pt(0)
+                p.paragraph_format.left_indent = Cm(0); p.paragraph_format.right_indent = Cm(0)
+                p.paragraph_format.first_line_indent = Cm(0)
                 p.paragraph_format.line_spacing = Pt(size+3.6)
                 p.paragraph_format.keep_with_next = ri<=1 or (keep_together and ri<len(rows)) or (ri==len(rows) and bool(source))
                 p.paragraph_format.keep_together = True
                 if align: chosen = align[ci]
                 else: chosen = inferred[ci] if ri==0 else ('right' if ci>0 and _numeric(value) else 'left')
                 p.alignment = {'left':WD_ALIGN_PARAGRAPH.LEFT,'right':WD_ALIGN_PARAGRAPH.RIGHT,'center':WD_ALIGN_PARAGRAPH.CENTER}[chosen]
-                color='FFFFFF' if ri==0 and header_fill else self.theme.navy if ri==0 or ri-1 in subtotal_rows else self.theme.ink
+                color=self.theme.navy if ri==0 or ri-1 in subtotal_rows else self.theme.ink
                 # Native superscript keeps compact valuation formulas editable.
                 for part in re.split(r'(\^\d+(?:\.\d+)?)',str(value)):
                     if not part:continue
@@ -453,8 +464,8 @@ class ResearchEditorialLayout:
                               ri==0 or ri-1 in subtotal_rows,self.theme.heading_east_asia if ri==0 else self.theme.body_east_asia)
                     if is_power:run.font.superscript=True
                 if ri==0:
-                    self._cell_rule(cell,'top',self.theme.navy,7); self._cell_rule(cell,'bottom',self.theme.slate,4)
-                    if header_fill:_replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=self.theme.navy))
+                    self._cell_rule(cell,'top',self.theme.rule,4); self._cell_rule(cell,'bottom',self.theme.slate,4)
+                    if header_fill:_replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=self.theme.table_header_fill))
                 elif self.theme.color_blocks:
                     fill=self.theme.key_fill if ri-1 in subtotal_rows else self.theme.zebra if ri%2==0 else 'FFFFFF'
                     _replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=fill))
@@ -467,11 +478,13 @@ class ResearchEditorialLayout:
         return table
 
     def _picture(self, paragraph, path, width_cm, max_height_cm):
-        if width_cm <= .24 or max_height_cm <= 0:
+        if width_cm <= .24 or (max_height_cm is not None and max_height_cm <= 0):
             raise ValueError('Figure dimensions must leave room for symmetric insets.')
         path = Path(path)
         with Image.open(path) as img: px_w, px_h = img.size
-        actual_width = min(width_cm-.24, max_height_cm*px_w/px_h)
+        actual_width = width_cm-.24
+        if max_height_cm is not None and actual_width*px_h/px_w > max_height_cm + .01:
+            raise ValueError('Chart exceeds the requested height at readable width; redraw with a shorter canvas or allow more height.')
         paragraph.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
         paragraph.paragraph_format.left_indent = Cm(.12)
         paragraph.paragraph_format.right_indent = Cm(.12)
@@ -482,7 +495,7 @@ class ResearchEditorialLayout:
         picture._inline.docPr.set('descr', path.stem)
         return picture
 
-    def figure(self, path, caption, source=None, width_cm=None, max_height_cm=8.5, note=None):
+    def figure(self, path, caption, source=None, width_cm=None, max_height_cm=None, note=None):
         self.figure_count += 1; number = self.figure_count
         _caption(self.doc.add_paragraph(f'图 {number}  {caption}', 'Caption'),self.theme)
         p = self.doc.add_paragraph(); p.paragraph_format.keep_with_next = True
@@ -493,7 +506,7 @@ class ResearchEditorialLayout:
         self.manifest['figures'].append({'number':number,'caption':caption,'path':str(path),'layout':'full','internal_note':note})
         return number
 
-    def figure_pair(self, paths, captions, sources=None, gap_cm=.65, notes=None, max_height_cm=5.5):
+    def figure_pair(self, paths, captions, sources=None, gap_cm=.65, notes=None, max_height_cm=None):
         sources=sources or ['团队分析','团队分析']
         if len(paths)!=2 or len(captions)!=2 or len(sources)!=2: raise ValueError('A figure pair needs two paths, captions, and sources.')
         width = (self.current_width_cm-gap_cm)/2
