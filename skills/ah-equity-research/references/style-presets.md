@@ -37,6 +37,23 @@ r.end_appendix()  # 后面还有正文式内容时显式退出
 
 `Theme.preset(name, **overrides)`先载入方案，再应用调用方覆盖；字段只作用于该Theme实例。`charts.configure(theme=...)`接收方案名称字符串，不接收Theme对象或字典，也不读取报告当前区域；须在创建新图前调用。用`charts.PALETTE`或默认色轮取序列颜色，避免图表内硬编码旧配色。自定义Word颜色覆盖不会自动传到制图；确需覆盖图表序列色时，可向`configure`传入四个`#RRGGBB`颜色的`palette`，并重新检查图例、标签对比度和系列语义。已有Figure与已导出的PNG/SVG不会因切换主题自动变色，需要从原始数据重绘。
 
+## 自定义研究名称
+
+构造报告时可传入`research_brand="示例策略研究"`，首页顶部色带与页眉左侧统一显示该名称；公司名、证券代码和`report_type`报告类型保持各自含义，不用品牌名称替代。
+
+```python
+r = EditorialReport(company="公司名", ticker="证券代码", date="研究截止日",
+                    theme=Theme.preset("blue_gray"), research_brand="示例策略研究")
+```
+
+省略该参数或传入`None`时，读取当前skill根目录的`config.local.json`中`research_brand`；无配置则沿用`report_type`。显式字符串覆盖本机默认；显式空字符串`""`表示本次不使用默认品牌，直接回退`report_type`，不会再读取本机配置。例如，本机文件可写：
+
+```json
+{"research_brand": "示例策略研究"}
+```
+
+本机配置供个人环境使用，已列入Git忽略规则，公共发布包不包含该文件。分享skill时保留通用说明，不复制个人默认名称；最终报告中的研究名称按本次用户要求检查，不据此声称发布资质。
+
 ## 附录简化层级
 
 默认附录降低装饰强度，同时保留数据密度与可读性：

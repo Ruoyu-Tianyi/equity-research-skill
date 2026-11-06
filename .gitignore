@@ -4,6 +4,7 @@
 !.env.example
 *.key
 *.pem
+config.local.json
 
 # Runtime files
 __pycache__/

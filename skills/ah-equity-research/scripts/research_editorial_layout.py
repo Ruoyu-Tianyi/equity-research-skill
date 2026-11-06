@@ -6,6 +6,7 @@ It does not source financial facts, decide recommendations, or export PDF.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import json
 from pathlib import Path
 import re
 from typing import Sequence
@@ -19,6 +20,37 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 from PIL import Image
+
+
+def load_research_brand(research_brand=None):
+    """Resolve an explicit brand or the skill root's optional local default.
+
+    None reads config.local.json beside SKILL.md. An explicit string, including
+    an empty string, bypasses local configuration. Empty means the renderer
+    retains its report_type label. No working-directory discovery is performed.
+    """
+    if research_brand is not None:
+        if not isinstance(research_brand, str):
+            raise TypeError('research_brand must be a string or None.')
+        return research_brand.strip()
+    config_path = Path(__file__).resolve().parents[1] / 'config.local.json'
+    try:
+        text = config_path.read_text(encoding='utf-8-sig')
+    except FileNotFoundError:
+        return ''
+    except UnicodeDecodeError as exc:
+        raise ValueError(f'{config_path} must contain valid UTF-8 JSON.') from exc
+    try:
+        settings = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'Invalid JSON in {config_path}: {exc.msg} '
+                         f'(line {exc.lineno}, column {exc.colno}).') from exc
+    if not isinstance(settings, dict):
+        raise ValueError(f'{config_path} must contain a JSON object.')
+    brand = settings.get('research_brand', '')
+    if not isinstance(brand, str):
+        raise ValueError(f'research_brand in {config_path} must be a string.')
+    return brand.strip()
 
 
 @dataclass(frozen=True)
@@ -162,8 +194,10 @@ def _numeric(value):
 
 
 class ResearchEditorialLayout:
-    def __init__(self, company, ticker='', date='', report_type='公司深度研究', theme=None):
+    def __init__(self, company, ticker='', date='', report_type='公司深度研究', theme=None,
+                 research_brand=None):
         self.theme = theme or Theme()
+        self.research_brand = load_research_brand(research_brand)
         self.doc = Document()
         self.company, self.ticker, self.date, self.report_type = company, ticker, date, report_type
         self.figure_count = self.table_count = 0
@@ -238,7 +272,7 @@ class ResearchEditorialLayout:
         p.paragraph_format.tab_stops.clear_all()
         p.paragraph_format.space_after = Pt(4); p.paragraph_format.line_spacing = Pt(11)
         p.paragraph_format.tab_stops.add_tab_stop(Cm(self.full_width_cm), WD_TAB_ALIGNMENT.RIGHT)
-        _font(p.add_run(self.report_type), 8, t.muted, east_asia=t.heading_east_asia)
+        _font(p.add_run(self.research_brand or self.report_type), 8, t.muted, east_asia=t.heading_east_asia)
         _font(p.add_run('\t' + self.company + ('  ' + self.ticker if self.ticker else '')), 8, t.muted)
         _border(p, 'bottom', t.rule, 3, 4)
         p = section.footer.paragraphs[0]
@@ -277,7 +311,7 @@ class ResearchEditorialLayout:
         p.paragraph_format.tab_stops.add_tab_stop(Cm(self.full_width_cm), WD_TAB_ALIGNMENT.RIGHT)
         if self.theme.color_blocks:
             _fill(p,self.theme.navy);p.paragraph_format.line_spacing=Pt(18)
-        _font(p.add_run('  '+self.report_type), 9, 'FFFFFF' if self.theme.color_blocks else self.theme.navy, True, self.theme.heading_east_asia)
+        _font(p.add_run('  '+(self.research_brand or self.report_type)), 9, 'FFFFFF' if self.theme.color_blocks else self.theme.navy, True, self.theme.heading_east_asia)
         _font(p.add_run('\t' + self.date+'  '), 9, 'FFFFFF' if self.theme.color_blocks else self.theme.muted)
         p = self.doc.add_paragraph(); p.paragraph_format.space_after = Pt(5)
         _font(p.add_run(self.company + ('  ' + self.ticker if self.ticker else '')), 13, self.theme.navy, True, self.theme.heading_east_asia)

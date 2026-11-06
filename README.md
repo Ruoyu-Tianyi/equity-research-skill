@@ -1,6 +1,6 @@
 # A/H 股公司深度研究 Skill
 
-**v1.2.0** · [GitHub 仓库](https://github.com/Ruoyu-Tianyi/equity-research-skill)
+**v1.2.1** · [GitHub 仓库](https://github.com/Ruoyu-Tianyi/equity-research-skill)
 
 面向 A 股与港股中文公司深度研究：结合用户已有的 Excel 估值模型、截至指定日期可获得的行业与公司资料，生成可编辑 Word 和同版 PDF。技能目录为 [`skills/ah-equity-research`](skills/ah-equity-research)。
 
@@ -47,6 +47,18 @@ Excel 模型：[工作簿路径或附件]
 ```
 
 金融数据接口需要用户已有账号及相应权限；本技能不附带 API 凭证，也不承诺自动接通或完整抓取全部数据。已有 CSV/XLSX 导出、公司公告与财报均可作为输入。历史时点研究按资料公开日期筛选，不引入截止日之后的信息。
+
+## 自定义研究名称
+
+可在调用时指定“首页与页眉使用示例策略研究”，或在构造器中传入`research_brand="示例策略研究"`。名称统一显示在首页顶部色带与页眉左侧，不替换公司、证券代码或报告类型。
+
+需要本机默认值时，在已安装skill的根目录创建`config.local.json`：
+
+```json
+{"research_brand": "示例策略研究"}
+```
+
+显式名称覆盖本机默认；省略参数或传入`None`时读取配置，无配置沿用`report_type`。显式传入空字符串`""`则直接使用`report_type`，不读取本机默认。该配置已加入Git忽略规则，不包含在公共发布包中。详细接口见[风格说明](skills/ah-equity-research/references/style-presets.md)。
 
 ## 辅助工具与交付
 
