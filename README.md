@@ -1,6 +1,6 @@
 # A/H 股公司深度研究 Skill
 
-**v1.1.0** · [GitHub 仓库](https://github.com/Ruoyu-Tianyi/equity-research-skill)
+**v1.2.0** · [GitHub 仓库](https://github.com/Ruoyu-Tianyi/equity-research-skill)
 
 面向 A 股与港股中文公司深度研究：结合用户已有的 Excel 估值模型、截至指定日期可获得的行业与公司资料，生成可编辑 Word 和同版 PDF。技能目录为 [`skills/ah-equity-research`](skills/ah-equity-research)。
 
@@ -12,6 +12,8 @@
 - **专业行文**：标题与段首先给具体判断，用同口径比较解释量价、份额、成本、利润及现金流变化；区分事实、公司指引、用户预测与补充测算，减少重复提醒和泛金融科普。
 - **统一视觉**：中文楷体（KaiTi），英文与数字 Times New Roman，覆盖正文、表格和图表。采用深蓝、灰蓝与米金配色；图表标题为蓝灰整行色带、白字，双图各占半栏，中间保留 6.5mm 白色间隔。图表按最终版面尺寸重绘、减少多余留白，统一图例、坐标轴与数据标签字号；正文及行末标点保持在色带边界内。列头采用浅蓝灰底与深蓝字，与深色标题带形成层级。
 - **充分展示模型**：重要经营驱动、财务预测与估值明细整理为可编辑分组附录，并补充正文未完整呈现、有研究价值的数据与图表，避免重复堆表。
+- **附录层级更轻**：浅底深字标题、白底列头、细分隔线及关键行轻填充，保留图表大小和数字字号；正文与附录可独立切换样式。
+- **五套可选风格**：默认蓝灰，另有森林绿与鼠尾草、酒红与石板灰、墨色与暖金、石墨与青绿。文档与图表同步配色，章节支持实心色带、浅底或细线，行距与段后间距小幅变化。
 - **来源简洁且可追溯**：图下只放简短资料来源；单位、期间和 A/E 放入标签或表头。完整链接、披露时间、原始定位与 Excel 单元格映射保存在底稿。
 
 ## 安装
@@ -48,11 +50,23 @@ Excel 模型：[工作簿路径或附件]
 
 ## 辅助工具与交付
 
+配色与附录调用详见[风格说明](skills/ah-equity-research/references/style-presets.md)。文档使用 `Theme.preset("forest_sage")`，图表在绘制前调用 `chart_style.configure(theme="forest_sage")`；未指定时保留蓝灰。附录使用 `begin_appendix(...)`，需要返回正文样式时调用 `end_appendix()`。
+
+使用合成数据生成五页风格预览：
+
+```bash
+python skills/ah-equity-research/scripts/preview_styles.py --output outputs/style-preview
+```
+
+脚本生成可编辑 Word 和示例图；可用下面的 Word 导出工具转为 PDF 后比较五套方案。正式报告选择一套风格。
+
 | 文件 | 用途 |
 |---|---|
 | `scripts/inspect_model.py` | 只读盘点 Excel 结构、公式与缓存，按明确映射提取单元格；不计算公式 |
 | `scripts/research_editorial_layout.py` | 装配可编辑 Word 正文、表格、目录及图表标题色带 |
 | `scripts/chart_style.py` | 应用图表字体与配色，导出图表并检查字体和边界 |
+| `scripts/design_presets.py` | 管理五套文档/图表配色与轻量版式参数 |
+| `scripts/preview_styles.py` | 用合成数据生成五套风格的正文、图表及附录预览 |
 | `scripts/export_word.ps1` | 在 Windows Word 中更新生成稿的目录等字段、统一字体并导出 PDF |
 
 脚本位于 `skills/ah-equity-research` 下。默认交付 Word、PDF 与独立 `support` 底稿目录；原模型保持只读，必要补算另行记录。

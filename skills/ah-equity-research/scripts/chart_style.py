@@ -6,6 +6,7 @@ built in. Call configure() before creating charts when supplying font files.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -20,10 +21,29 @@ from matplotlib.text import Text
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 from matplotlib.transforms import Bbox
 
-PALETTE = ("#24445C", "#7892A5", "#AE9B74", "#BCC8D1")
+DEFAULT_PALETTE = ("#24445C", "#7892A5", "#AE9B74", "#BCC8D1")
+# Stable shared objects: `from chart_style import C` also follows configure().
+PALETTE = list(DEFAULT_PALETTE)
 C = PALETTE
 FONT_FAMILY = ["Times New Roman", "KaiTi"]
 _FONT_FILES: dict[str, str] = {}
+_THEME_NAME = "blue_gray"
+_CHART_COLORS = {"text": "#26323A", "unit": "#536776", "grid": "#E5EAEE"}
+
+
+def _get_design(name: str) -> dict:
+    # Support both ordinary imports and loading this helper by its file path.
+    try:
+        from design_presets import get_preset
+    except ModuleNotFoundError as exc:
+        if exc.name != "design_presets":
+            raise
+        spec = importlib.util.spec_from_file_location(
+            "_research_design_presets", Path(__file__).with_name("design_presets.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        get_preset = module.get_preset
+    return get_preset(name)
 
 
 class ChartValidationError(RuntimeError):
@@ -55,12 +75,25 @@ def _font_file(family: str, supplied: str | Path | None) -> Path:
 
 def configure(*, kaiti_path: str | Path | None = None,
               times_path: str | Path | None = None,
-              times_variant_paths: tuple[str | Path, ...] = ()) -> dict[str, str]:
+              times_variant_paths: tuple[str | Path, ...] = (),
+              theme: str = "blue_gray",
+              palette: tuple[str, ...] | list[str] | None = None) -> dict[str, str]:
     """Resolve installed fonts or explicit files; fail instead of substituting.
 
     Optional Times New Roman bold/italic files can be registered through
     times_variant_paths. Font files are never bundled or downloaded here.
+    theme is a name from design_presets, not a Word Theme object. An optional
+    four-colour palette overrides the theme's series colours. PALETTE and C
+    update in place; the Matplotlib colour cycle changes for new axes. Existing
+    artists retain their colours: configure before creating each themed figure.
     """
+    global _THEME_NAME
+    design = _get_design(theme)
+    selected = list(design["chart_palette"] if palette is None else palette)
+    if len(selected) != 4 or any(not isinstance(c, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", c)
+                                for c in selected):
+        raise ValueError("palette must contain exactly four #RRGGBB colour strings")
+    selected = [c.upper() for c in selected]
     files = {
         "KaiTi": str(_font_file("KaiTi", kaiti_path)),
         "Times New Roman": str(_font_file("Times New Roman", times_path)),
@@ -69,13 +102,24 @@ def configure(*, kaiti_path: str | Path | None = None,
         files[f"Times New Roman variant {index}"] = str(_font_file("Times New Roman", path))
     _FONT_FILES.clear()
     _FONT_FILES.update(files)
+    PALETTE[:] = selected
+    _THEME_NAME = theme
+    # Keep the original default chart colours pixel-identical. Other themes
+    # derive grid/unit/text colours from the same report design as their series.
+    colours = ({"text": "#26323A", "unit": "#536776", "grid": "#E5EAEE"}
+               if theme == "blue_gray" else
+               {"text": "#" + design["theme"]["ink"],
+                "unit": "#" + design["theme"]["muted"],
+                "grid": "#" + design["theme"]["rule"]})
+    _CHART_COLORS.clear()
+    _CHART_COLORS.update(colours)
     plt.rcParams.update({
         "font.family": FONT_FAMILY, "font.size": 9,
         "axes.labelsize": 9, "xtick.labelsize": 8.5,
         "ytick.labelsize": 8.5, "legend.fontsize": 8.3,
-        "text.color": "#26323A", "axes.labelcolor": "#26323A",
+        "text.color": colours["text"], "axes.labelcolor": colours["text"],
         "axes.unicode_minus": False, "axes.edgecolor": PALETTE[3],
-        "axes.linewidth": .5, "grid.color": "#E5EAEE", "grid.linewidth": .45,
+        "axes.linewidth": .5, "grid.color": colours["grid"], "grid.linewidth": .45,
         "svg.fonttype": "path", "figure.facecolor": "white",
         "savefig.facecolor": "white", "lines.linewidth": 1.6,
         "xtick.major.size": 2, "ytick.major.size": 2,
@@ -85,6 +129,14 @@ def configure(*, kaiti_path: str | Path | None = None,
         "mathtext.bf": "Times New Roman:bold", "mathtext.fallback": None,
     })
     return files.copy()
+
+
+def _figure_design(fig) -> dict:
+    """Capture the active colours before another figure changes global config."""
+    if not hasattr(fig, "_research_design"):
+        fig._research_design = {"theme": _THEME_NAME, "palette": list(PALETTE),
+                                "chart_colors": _CHART_COLORS.copy()}
+    return fig._research_design
 
 
 def _ensure_fonts() -> None:
@@ -109,18 +161,20 @@ def figure(*, wide: bool = False, height: float = 2.6, ncols: int = 1,
     fig, axes = plt.subplots(1, ncols, figsize=(width_cm / 2.54, height), squeeze=False)
     fig._research_target_width_cm = width_cm
     fig._research_font_size_pt = font_size_pt
+    _figure_design(fig)
     return fig, axes[0] if ncols > 1 else axes[0, 0]
 
 
 def style(ax, unit: str = "", *, zero: bool = True) -> None:
+    colours = _figure_design(ax.figure)["chart_colors"]
     ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(axis="y")
+    ax.grid(axis="y", color=colours["grid"])
     ax.set_axisbelow(True)
     ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
     ax.yaxis.set_major_formatter(FuncFormatter(
         lambda value, _: f"{value:,.0f}" if abs(value) >= 100 else f"{value:g}"))
     if unit:
-        ax.text(0, 1.05, unit, transform=ax.transAxes, fontsize=8.5, color="#536776")
+        ax.text(0, 1.05, unit, transform=ax.transAxes, fontsize=8.5, color=colours["unit"])
     if zero:
         ax.set_ylim(bottom=0)
 
@@ -225,6 +279,7 @@ def save(fig, output_stem: str | Path, *, dpi: int = 320,
     collisions, data accuracy or final-page readability; visually review all three.
     """
     _ensure_fonts()
+    design = _figure_design(fig)
     if dpi < 300:
         raise ValueError("Use dpi >= 300 for the PNG report artifact")
     if pad_cm < 0 or (font_size_pt is not None and font_size_pt <= 0):
@@ -281,7 +336,8 @@ def save(fig, output_stem: str | Path, *, dpi: int = 320,
             "status": "pass" if passed else "fail",
             "scope": "Font and canvas-boundary checks only; human visual review remains required.",
             "family": FONT_FAMILY, "font_files": _FONT_FILES.copy(),
-            "palette": list(PALETTE), "dimensions_inches": list(fig.get_size_inches()),
+            "palette": design["palette"], "theme": design["theme"],
+            "chart_colors": design["chart_colors"], "dimensions_inches": list(fig.get_size_inches()),
             "output_dimensions_cm": [export_bounds.width * 2.54, export_bounds.height * 2.54],
             "target_width_cm": final_width_cm,
             "target_height_cm": final_height_cm,

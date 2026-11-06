@@ -5,7 +5,7 @@ It does not source financial facts, decide recommendations, or export PDF.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import re
 from typing import Sequence
@@ -25,6 +25,10 @@ from PIL import Image
 class Theme:
     navy: str = '24445C'
     caption_fill: str = '4C687B'
+    caption_text_color: str = 'FFFFFF'
+    caption_font_pt: float = 9.2
+    caption_line_pt: float = 17.0
+    chapter_style: str = 'band'
     slate: str = '7892A5'
     gold: str = 'AE9B74'
     ink: str = '20252B'
@@ -41,12 +45,26 @@ class Theme:
     latin: str = 'Times New Roman'
     body_pt: float = 10.5
     leading_pt: float = 15.5
+    body_after_pt: float = 5.0
     page_width_cm: float = 21.0
     page_height_cm: float = 29.7
     margin_left_cm: float = 1.85
     margin_right_cm: float = 1.85
     margin_top_cm: float = 1.8
     margin_bottom_cm: float = 1.65
+
+    @classmethod
+    def preset(cls, name='blue_gray', **overrides):
+        from design_presets import get_preset
+        settings = get_preset(name)['theme'].copy()
+        settings.update(overrides)
+        return cls(**settings)
+
+    def appendix(self):
+        return replace(self, caption_fill=self.pale, caption_text_color=self.navy,
+                       caption_font_pt=8.8, caption_line_pt=15.5,
+                       table_header_fill='FFFFFF', key_fill=self.pale,
+                       zebra='FAFBFC', body_after_pt=4)
 
 
 def _element(tag, **attrs):
@@ -97,17 +115,35 @@ def _panel(paragraph, fill, accent=None):
 def _caption(paragraph, theme):
     # Paragraph shading fills the available width. Paired captions are inside
     # separate cells with a genuine unshaded spacer column between them.
-    text=paragraph.text; paragraph.clear()
+    text=paragraph.text.strip(); paragraph.clear()
     paragraph.paragraph_format.left_indent = Cm(0)
     paragraph.paragraph_format.right_indent = Cm(0)
     paragraph.paragraph_format.first_line_indent = Cm(0)
-    paragraph.paragraph_format.line_spacing=Pt(17 if theme.color_blocks else 14)
+    paragraph.paragraph_format.line_spacing=Pt(theme.caption_line_pt if theme.color_blocks else 14)
     paragraph.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.LEFT
     m=re.match(r'^([图表]\s*\d+)\s+(.*)$',text)
     if m and theme.color_blocks:
         _fill(paragraph,theme.caption_fill)
-        _font(paragraph.add_run(' '+m.group(1)+'  '+m.group(2)),9.2,'FFFFFF',True,theme.heading_east_asia,theme.latin)
-    else:_font(paragraph.add_run(text),9.2,theme.navy,True,theme.heading_east_asia,theme.latin)
+        _font(paragraph.add_run(' '+m.group(1)+'  '+m.group(2)),theme.caption_font_pt,theme.caption_text_color,True,theme.heading_east_asia,theme.latin)
+    else:_font(paragraph.add_run(text),theme.caption_font_pt,theme.navy,True,theme.heading_east_asia,theme.latin)
+
+
+def appendix_heading(paragraph, theme, level=1):
+    """Apply a subordinate appendix hierarchy without changing its text."""
+    pp=paragraph._p.get_or_add_pPr()
+    for tag in ('shd','pBdr'):
+        old=pp.find(qn('w:'+tag))
+        if old is not None:pp.remove(old)
+    pf=paragraph.paragraph_format
+    pf.left_indent=Cm(0 if level==1 else .12);pf.right_indent=Cm(0 if level==1 else .12)
+    pf.first_line_indent=Cm(0);pf.keep_with_next=True
+    pf.space_before=Pt(10 if level==1 else 7);pf.space_after=Pt(5 if level==1 else 3)
+    pf.line_spacing=Pt(20 if level==1 else 16)
+    if level==1:
+        if theme.color_blocks:_fill(paragraph,theme.pale)
+        _border(paragraph,'bottom',theme.slate,4,1)
+    for run in paragraph.runs:
+        _font(run,13 if level==1 else 11,theme.navy,True,theme.heading_east_asia,theme.latin)
 
 
 def _field(paragraph, instruction):
@@ -135,6 +171,7 @@ class ResearchEditorialLayout:
         self.full_width_cm = self.theme.page_width_cm - self.theme.margin_left_cm - self.theme.margin_right_cm
         self.current_width_cm = self.full_width_cm
         self._cover_phase = None
+        self._appendix = False
         self._configure_styles()
         self._configure_section(self.doc.sections[0])
         self._running_furniture(self.doc.sections[0])
@@ -158,7 +195,7 @@ class ResearchEditorialLayout:
                 _replace(rp,'rFonts',_element('rFonts',ascii=t.latin,hAnsi=t.latin,eastAsia=t.body_east_asia,cs=t.latin))
                 _replace(rp,'lang',_element('lang',val='en-US',eastAsia='zh-CN'))
         styles = {
-            'Normal': (t.body_pt, t.leading_pt, 0, 5, False, t.ink, t.body_east_asia),
+            'Normal': (t.body_pt, t.leading_pt, 0, t.body_after_pt, False, t.ink, t.body_east_asia),
             'Title': (22, 28, 3, 6, True, t.navy, t.heading_east_asia),
             'Subtitle': (11, 16, 0, 7, False, t.muted, t.lead_east_asia),
             'Heading 1': (14, 22, 13, 7, True, t.navy, t.heading_east_asia),
@@ -270,7 +307,7 @@ class ResearchEditorialLayout:
         p = self.doc.add_paragraph(); t = self.theme
         if size is None: size = 9 if self._cover_phase == 'sidebar' else 10.5 if self._cover_phase=='main' else t.body_pt
         p.paragraph_format.line_spacing = Pt(13 if self._cover_phase == 'sidebar' else t.leading_pt)
-        if after is not None: p.paragraph_format.space_after = Pt(after)
+        p.paragraph_format.space_after = Pt(after if after is not None else self.content_theme.body_after_pt)
         p.paragraph_format.keep_with_next = keep_next
         if lead:
             _font(p.add_run(lead), size, color or t.navy, True, t.lead_east_asia,t.latin)
@@ -288,8 +325,27 @@ class ResearchEditorialLayout:
 
     p = paragraph
 
+    @property
+    def content_theme(self):
+        return self.theme.appendix() if self._appendix else self.theme
+
+    def begin_appendix(self, title, number=None, page_break=True):
+        self._appendix=True
+        return self.heading(title,1,number=number,page_break=page_break)
+
+    def end_appendix(self):
+        self._appendix=False
+
+    def _content_caption(self, paragraph):
+        _caption(paragraph,self.content_theme)
+        if self._appendix:
+            _border(paragraph,'bottom',self.theme.rule,3,1)
+            paragraph.paragraph_format.space_before=Pt(4)
+            paragraph.paragraph_format.space_after=Pt(2)
+
     def heading(self, text, level=1, number=None, page_break=False):
         if level not in (1, 2, 3): raise ValueError('Heading level must be 1, 2, or 3.')
+        if level==1 and re.match(r'^(附录|Appendix\b)',text.strip(),re.I):self._appendix=True
         value = (f'{number:02d}' + '  ' if isinstance(number,int) else str(number)+'  ' if number is not None else '') + text
         p = self.doc.add_paragraph(value, f'Heading {level}')
         p.paragraph_format.page_break_before = page_break
@@ -303,10 +359,15 @@ class ResearchEditorialLayout:
                 _panel(p,self.theme.navy if dark else self.theme.pale,None if dark else self.theme.gold)
                 p.paragraph_format.line_spacing=Pt(17)
                 for run in p.runs:_font(run,10.5,'FFFFFF' if dark else self.theme.navy,True,self.theme.heading_east_asia)
+        elif self._appendix:
+            appendix_heading(p,self.theme,level)
         elif self.theme.color_blocks:
             if level==1:
-                _panel(p,self.theme.navy)
-                for run in p.runs:_font(run,14,'FFFFFF',True,self.theme.heading_east_asia)
+                mode=self.theme.chapter_style
+                if mode not in ('band','tint','rule'):raise ValueError('chapter_style must be band, tint, or rule')
+                if mode!='rule':_panel(p,self.theme.navy if mode=='band' else self.theme.pale)
+                if mode!='band':_border(p,'bottom',self.theme.gold,5,3)
+                for run in p.runs:_font(run,14,'FFFFFF' if mode=='band' else self.theme.navy,True,self.theme.heading_east_asia,self.theme.latin)
             elif level==2:
                 p.paragraph_format.left_indent=Cm(.16)
                 _border(p,'left',self.theme.gold,10,5)
@@ -425,6 +486,7 @@ class ResearchEditorialLayout:
         if widths is not None:
             if widths_cm is not None: raise ValueError('Use widths or widths_cm, not both.')
             widths_cm = widths
+        t = self.content_theme
         rows = [list(r) for r in rows]; n = len(headers)
         if not n or any(len(row)!=n for row in rows): raise ValueError('All table rows must match the header length.')
         if widths_cm is None:
@@ -433,8 +495,8 @@ class ResearchEditorialLayout:
         if min(widths_cm)<.7: raise ValueError('A table column is too narrow; simplify or rotate the table.')
         if caption:
             self.table_count += 1
-            _caption(self.doc.add_paragraph(f'表 {self.table_count}  {caption}', 'Caption'),self.theme)
-        if header_fill is None: header_fill=self.theme.color_blocks
+            self._content_caption(self.doc.add_paragraph(f'表 {self.table_count}  {caption}', 'Caption'))
+        if header_fill is None: header_fill=t.color_blocks
         table = self._table_shell(widths_cm)
         # Word aligns the first cell text to the paragraph origin; compensate
         # for its 4.5pt cell margin so the table outer edge matches the band.
@@ -455,22 +517,22 @@ class ResearchEditorialLayout:
                 if align: chosen = align[ci]
                 else: chosen = inferred[ci] if ri==0 else ('right' if ci>0 and _numeric(value) else 'left')
                 p.alignment = {'left':WD_ALIGN_PARAGRAPH.LEFT,'right':WD_ALIGN_PARAGRAPH.RIGHT,'center':WD_ALIGN_PARAGRAPH.CENTER}[chosen]
-                color=self.theme.navy if ri==0 or ri-1 in subtotal_rows else self.theme.ink
+                color=t.navy if ri==0 or ri-1 in subtotal_rows else t.ink
                 # Native superscript keeps compact valuation formulas editable.
                 for part in re.split(r'(\^\d+(?:\.\d+)?)',str(value)):
                     if not part:continue
                     is_power=part.startswith('^')
                     run=_font(p.add_run(part[1:] if is_power else part),size,color,
-                              ri==0 or ri-1 in subtotal_rows,self.theme.heading_east_asia if ri==0 else self.theme.body_east_asia)
+                              ri==0 or ri-1 in subtotal_rows,t.heading_east_asia if ri==0 else t.body_east_asia)
                     if is_power:run.font.superscript=True
                 if ri==0:
-                    self._cell_rule(cell,'top',self.theme.rule,4); self._cell_rule(cell,'bottom',self.theme.slate,4)
-                    if header_fill:_replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=self.theme.table_header_fill))
-                elif self.theme.color_blocks:
-                    fill=self.theme.key_fill if ri-1 in subtotal_rows else self.theme.zebra if ri%2==0 else 'FFFFFF'
+                    self._cell_rule(cell,'top',t.rule,4); self._cell_rule(cell,'bottom',t.slate,4)
+                    if header_fill:_replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=t.table_header_fill))
+                elif t.color_blocks:
+                    fill=t.key_fill if ri-1 in subtotal_rows else t.zebra if ri%2==0 else 'FFFFFF'
                     _replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=fill))
-                if ri==len(rows): self._cell_rule(cell,'bottom',self.theme.navy,6)
-                if ri-1 in subtotal_rows: self._cell_rule(cell,'top',self.theme.rule,3)
+                if ri==len(rows): self._cell_rule(cell,'bottom',t.navy,6)
+                if ri-1 in subtotal_rows: self._cell_rule(cell,'top',t.rule,3)
         if source or caption: self.source(source)
         else:
             p = self.doc.add_paragraph(); p.paragraph_format.line_spacing = Pt(1); p.paragraph_format.space_after = Pt(3)
@@ -497,7 +559,7 @@ class ResearchEditorialLayout:
 
     def figure(self, path, caption, source=None, width_cm=None, max_height_cm=None, note=None):
         self.figure_count += 1; number = self.figure_count
-        _caption(self.doc.add_paragraph(f'图 {number}  {caption}', 'Caption'),self.theme)
+        self._content_caption(self.doc.add_paragraph(f'图 {number}  {caption}', 'Caption'))
         p = self.doc.add_paragraph(); p.paragraph_format.keep_with_next = True
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         self._picture(p, path, min(width_cm if width_cm is not None else self.current_width_cm,
@@ -533,9 +595,9 @@ class ResearchEditorialLayout:
             p.paragraph_format.space_before = Pt(0); p.paragraph_format.space_after = Pt(0)
             p.paragraph_format.keep_with_next = True
             p.add_run(f'图 {self.figure_count}  {captions[k]}')
-            _caption(p,self.theme)
+            self._content_caption(p)
             if self.theme.color_blocks:
-                _replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=self.theme.caption_fill))
+                _replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=self.content_theme.caption_fill))
             p = image_row.cells[ci].paragraphs[0]; p.paragraph_format.keep_with_next = True
             self._picture(p,paths[k],width,max_height_cm)
             source_cell = source_row.cells[ci]
