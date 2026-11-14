@@ -11,6 +11,21 @@ import re
 
 
 _PRESETS = {
+    "institutional": {
+        "name": "institutional", "label_zh": "机构研究",
+        "description": "国际投行研报的克制版式：大面积留白、细线分隔、图表标题粗体配顶线、三线表与浅灰预测列，单一深海军蓝主色加少量琥珀强调。",
+        "theme": {
+            "family": "institutional",
+            "navy": "13294B", "caption_fill": "FFFFFF", "caption_text_color": "13294B",
+            "slate": "5C88B5", "gold": "C99A2E", "ink": "1E2328", "muted": "5E6573",
+            "rule": "C3C9D1", "pale": "F3F5F7", "table_header_fill": "FFFFFF",
+            "key_fill": "FFFFFF", "zebra": "FFFFFF", "chapter_style": "rule",
+            "body_pt": 10.5, "leading_pt": 15.0, "body_after_pt": 4.5,
+        },
+        "chart_palette": ["#13294B", "#5C88B5", "#A6A6A6", "#C99A2E"],
+        "chart": {"forecast_mark": "divider", "axis_color": "#8C939B", "range_bar": "#AFC3DA",
+                  "price_mark": "#C99A2E", "heat_low": "#BFC3C8"},
+    },
     "blue_gray": {
         "name": "blue_gray", "label_zh": "蓝灰", 
         "description": "克制的蓝灰色带与浅灰底表格，保留既有默认配色和排版参数。",
@@ -80,14 +95,14 @@ def list_presets() -> list[dict]:
             for value in _PRESETS.values()]
 
 
-def get_preset(name: str = "blue_gray") -> dict:
+def get_preset(name: str = "institutional") -> dict:
     """Return a mutable independent copy of a named Word/chart design."""
     if not isinstance(name, str) or name not in _PRESETS:
         raise ValueError(f"Unknown design preset {name!r}; choose from {', '.join(_PRESETS)}")
     return deepcopy(_PRESETS[name])
 
 
-def theme_fields(name: str = "blue_gray") -> dict:
+def theme_fields(name: str = "institutional") -> dict:
     """Return only fields accepted by the Word renderer's Theme dataclass."""
     return get_preset(name)["theme"]
 
@@ -105,7 +120,7 @@ def contrast_ratio(foreground: str, background: str) -> float:
     return (high + .05) / (low + .05)
 
 
-def contrast_report(name: str = "blue_gray", minimum: float = 4.5) -> dict:
+def contrast_report(name: str = "institutional", minimum: float = 4.5) -> dict:
     """Audit text/background pairings, not chart-series accessibility or layout.
 
     Series colours encode categories and are not all suitable for white labels;

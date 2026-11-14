@@ -15,7 +15,7 @@
 
 ## 色彩与字体层级
 
-v1.2默认保留已认可的`blue_gray`正文：navy `#24445C`、slate `#7892A5`、gold `#AE9B74`、pale `#EDF2F5`，图表标题使用`#4C687B`。正文一级章节为紧凑深蓝白字带，图表编号与标题共用蓝灰白字带、默认17pt行距，列头为`#E8EFF4`浅底与`#24445C`深字。用户选择其他方案时，按[style-presets.md](style-presets.md)使用`forest_sage`、`burgundy_slate`、`ink_gold`或`graphite_teal`整套设计，文档与图表配色同步；不随机轮换或改动已认可正文。
+v2.2起默认`institutional`（见[style-presets.md](style-presets.md)“默认：机构研究”）。可选的`blue_gray`正文参数：navy `#24445C`、slate `#7892A5`、gold `#AE9B74`、pale `#EDF2F5`，图表标题使用`#4C687B`。正文一级章节为紧凑深蓝白字带，图表编号与标题共用蓝灰白字带、默认17pt行距，列头为`#E8EFF4`浅底与`#24445C`深字。用户选择其他方案时，按[style-presets.md](style-presets.md)使用`forest_sage`、`burgundy_slate`、`ink_gold`或`graphite_teal`整套设计，文档与图表配色同步；不随机轮换或改动已认可正文。
 
 章节可按方案使用实心带、浅底或细线；附录默认改为浅底深字与细线，图表标题浅带深字、白底深字列头。通栏及双图标题区域始终保持所属栏宽，双图中间0.65cm真实空白。长标题正常换行，不增加无内容空高、不裁切；数据行白底或轻斑马纹，关键行轻填充，避免连续深色条。主题与附录模式均支持少填充偏好，用户模板优先；字体和研究要求不随方案变化。
 
@@ -24,6 +24,11 @@ v1.2默认保留已认可的`blue_gray`正文：navy `#24445C`、slate `#7892A5`
 色块必须与语义对应。章节、图表标题和列头分别采用一致的内边距规则，按所选主题及正文/附录区域区分层级；财务小计采用轻填充。关键财务行按标签选择；`subtotal_rows`为数据行零基索引，错一行会突出非经营项等无关字段。双图各有独立标题区域与一行简短资料来源，中间留白贯穿标题和图组，不给整个图组套厚边框。仅调整版式时保持既有研究文字和数值不变。图表下方不附解释注、免责或口径长文；单位、期间、分母、A/E移入标签、标题或表头，重要假设在正文或方法表只交代一次。来源ID、页码、工作表/单元格及完整URL只存support。
 
 ## 工程实现
+
+字体文件放在工作区`fonts/`（或环境变量`RESEARCH_FONT_DIR`指向的目录）：`simkai.ttf`（楷体）、`times.ttf`、`timesbd.ttf`、`timesi.ttf`、`timesbi.ttf`（Times New Roman四种字重）。`chart_style.configure()`自动发现并核验字体家族名，`build_report.py --pdf`同时把它们安装给LibreOffice预览。字体为用户已授权的本机文件，不进入Git或公共发布包。
+
+成稿入口为`scripts/build_report.py`（规格格式见[report-spec.md](report-spec.md)），数据图模板为`scripts/chart_templates.py`。下面描述其底层模块，供扩展模板或排查时使用。缺少KaiTi/Times New Roman的环境只能用`--draft`出排版草稿。
+
 
 默认排版模块为 `scripts/research_editorial_layout.py`，公开类为 `EditorialReport`（`ResearchEditorialLayout`的别名）。它依赖Python、python-docx和Pillow，负责可编辑DOCX装配，不提供事实抓取、估值计算或PDF导出。用`Theme.preset(name, **overrides)`选择方案，完整选择规则见[style-presets.md](style-presets.md)。执行前检查当前主题与接口是否实际落实字体、颜色、正文/附录层级和纯来源行；规范同时约束独立生成的图表，不能仅调整DOCX样式。研究判断、数据正确性和最终视觉验收仍由生成流程完成。
 
@@ -34,7 +39,7 @@ v1.2默认保留已认可的`blue_gray`正文：navy `#24445C`、slate `#7892A5`
 ```python
 import chart_style as charts
 
-style_name = "blue_gray"  # 与Word的Theme.preset使用同一名称
+style_name = "institutional"  # 与Word的Theme.preset使用同一名称
 charts.configure(theme=style_name)  # 或加传本机字体路径
 fig, ax = charts.figure(wide=False, height_cm=5.4, font_size_pt=8.75)
 ax.bar(["2024A", "2025A", "2026E"], [100, 120, 135],
@@ -63,7 +68,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/export_word.ps1 -Doc
 from research_editorial_layout import EditorialReport, Theme
 
 r = EditorialReport(company="公司名", ticker="证券代码", date="研究截止日",
-                    theme=Theme.preset("blue_gray"))
+                    theme=Theme.preset("institutional"))
 r.cover(
     params={"title": "具体研究命题", "facts": [("行业", "已核验行业")],
             "valuation": "估值结论、方法与适用条件", "risks": "关键风险"},
@@ -78,7 +83,7 @@ r.subheading("支持投资逻辑的行业变化")
 r.paragraph("证据及其经济含义；重要假设在此或集中方法表交代。", bold_lead="明确判断。")
 r.table(["指标", "期间A", "期间E"], [["指标名", "实际值", "预测值"]],
         title="分析表（单位、期间）", source="资料来源：公司公告、团队分析", widths=[6.3, 5.5, 5.5])
-r.figure("全宽图.png", caption="原创分析的结论式标题", source="资料来源：团队分析")
+r.figure("全宽图.png", caption="对象与期间（单位）", source="资料来源：团队分析")
 r.pair(["左图.png", "右图.png"], ["左图标题", "右图标题"],
        ["资料来源：公司公告", "资料来源：估值模型、团队分析"])
 r.begin_appendix("附录一 经营与财务预测", number=7)

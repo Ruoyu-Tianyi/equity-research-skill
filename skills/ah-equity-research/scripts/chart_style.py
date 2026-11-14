@@ -27,7 +27,7 @@ PALETTE = list(DEFAULT_PALETTE)
 C = PALETTE
 FONT_FAMILY = ["Times New Roman", "KaiTi"]
 _FONT_FILES: dict[str, str] = {}
-_THEME_NAME = "blue_gray"
+_THEME_NAME = "institutional"
 _CHART_COLORS = {"text": "#26323A", "unit": "#536776", "grid": "#E5EAEE"}
 
 
@@ -50,7 +50,47 @@ class ChartValidationError(RuntimeError):
     """An exported chart failed its font or canvas-boundary checks."""
 
 
+FONT_FILE_NAMES = {"KaiTi": ("simkai.ttf", "KaiTi.ttf", "kaiti.ttf"),
+                   "Times New Roman": ("times.ttf", "Times New Roman.ttf", "TimesNewRoman.ttf")}
+TIMES_VARIANTS = ("timesbd.ttf", "timesi.ttf", "timesbi.ttf")
+
+
+def font_dirs() -> list[Path]:
+    """Licensed font folders supplied by the user; never bundled or downloaded.
+
+    Order: $RESEARCH_FONT_DIR, ./fonts, then a fonts/ folder next to the skill
+    or in the workspace above it (skills/ah-equity-research/../../fonts).
+    """
+    import os
+    here = Path(__file__).resolve().parent
+    found = []
+    for d in [os.environ.get("RESEARCH_FONT_DIR"), Path.cwd() / "fonts", here.parent / "fonts",
+              here.parents[2] / "fonts" if len(here.parents) > 2 else None,
+              here.parents[3] / "fonts" if len(here.parents) > 3 else None]:
+        if d and Path(d).is_dir() and Path(d).resolve() not in found:
+            found.append(Path(d).resolve())
+    return found
+
+
+def _discover(family: str) -> Path | None:
+    for d in font_dirs():
+        for name in FONT_FILE_NAMES[family]:
+            for cand in (d / name, d / name.lower(), d / name.upper()):
+                if cand.is_file():
+                    return cand
+    return None
+
+
+def discovered_times_variants() -> list[Path]:
+    out = []
+    for d in font_dirs():
+        out += [d / n for n in TIMES_VARIANTS if (d / n).is_file()]
+    return out
+
+
 def _font_file(family: str, supplied: str | Path | None) -> Path:
+    if supplied is None:
+        supplied = _discover(family)
     if supplied is not None:
         path = Path(supplied).expanduser().resolve()
         if not path.is_file():
@@ -76,7 +116,7 @@ def _font_file(family: str, supplied: str | Path | None) -> Path:
 def configure(*, kaiti_path: str | Path | None = None,
               times_path: str | Path | None = None,
               times_variant_paths: tuple[str | Path, ...] = (),
-              theme: str = "blue_gray",
+              theme: str = "institutional",
               palette: tuple[str, ...] | list[str] | None = None) -> dict[str, str]:
     """Resolve installed fonts or explicit files; fail instead of substituting.
 
@@ -98,6 +138,8 @@ def configure(*, kaiti_path: str | Path | None = None,
         "KaiTi": str(_font_file("KaiTi", kaiti_path)),
         "Times New Roman": str(_font_file("Times New Roman", times_path)),
     }
+    if not times_variant_paths and times_path is None:
+        times_variant_paths = tuple(discovered_times_variants())
     for index, path in enumerate(times_variant_paths, 1):
         files[f"Times New Roman variant {index}"] = str(_font_file("Times New Roman", path))
     _FONT_FILES.clear()
@@ -118,7 +160,7 @@ def configure(*, kaiti_path: str | Path | None = None,
         "axes.labelsize": 9, "xtick.labelsize": 8.5,
         "ytick.labelsize": 8.5, "legend.fontsize": 8.3,
         "text.color": colours["text"], "axes.labelcolor": colours["text"],
-        "axes.unicode_minus": False, "axes.edgecolor": PALETTE[3],
+        "axes.unicode_minus": False, "axes.edgecolor": design.get("chart", {}).get("axis_color", PALETTE[3]),
         "axes.linewidth": .5, "grid.color": colours["grid"], "grid.linewidth": .45,
         "svg.fonttype": "path", "figure.facecolor": "white",
         "savefig.facecolor": "white", "lines.linewidth": 1.6,

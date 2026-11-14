@@ -3,5 +3,7 @@ openpyxl>=3.1
 # Editable Word assembly and image sizing
 python-docx>=1.2
 Pillow>=10
-# Optional when using scripts/chart_style.py
+# Charts (chart_style / chart_templates / build_report)
 matplotlib>=3.8
+# Optional: A-share market data for cover charts (fetch_market_data.py)
+# tushare>=1.4

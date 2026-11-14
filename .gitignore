@@ -28,3 +28,11 @@ validation/
 *.pdf
 *.zip
 *.audit.json
+
+# Licensed font files supplied locally
+fonts/
+*.ttf
+*.ttc
+
+# Local brand assets (logo)
+brand/

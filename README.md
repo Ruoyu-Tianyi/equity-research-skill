@@ -6,12 +6,12 @@
 
 面向 **A 股与港股** 的中文研究工作流 · **Codex Agent Skill**
 
-[![Version](https://img.shields.io/badge/version-1.2.1-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
+[![Version](https://img.shields.io/badge/version-2.6.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](requirements.txt)
 [![Output](https://img.shields.io/badge/output-DOCX%20%2B%20PDF-4C687B?style=flat-square)](#preview)
-[![Styles](https://img.shields.io/badge/design-5%20themes-7F9B88?style=flat-square)](#design)
+[![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
 
-[效果预览](#preview) · [快速开始](#quick-start) · [核心能力](#features) · [风格与品牌](#design) · [使用文档](#docs)
+[效果预览](#preview) · [快速开始](#quick-start) · [核心能力](#features) · [风格与品牌](#design) · [使用文档](#docs) · [更新记录](CHANGELOG.md)
 
 </div>
 
@@ -24,7 +24,7 @@
 
 <p align="center">
   <a href="docs/assets/report-preview.png">
-    <img src="docs/assets/report-preview.png" alt="蓝灰风格排版示例，展示正文、图表、可编辑表格与浅色附录层级；数值均为合成数据" width="680">
+    <img src="docs/assets/report-preview.png" alt="机构研究风格排版示例：首页双栏、组合图、环形图、哑铃图、估值区间与敏感性热力图；数值均为合成数据" width="680">
   </a>
 </p>
 
@@ -67,8 +67,9 @@ python -m pip install -r requirements.txt
 | 环境 | 要求 |
 | --- | --- |
 | Agent | Codex；需能读取模型、执行本地脚本及访问所用资料 |
-| Python | 3.10+；依赖 `openpyxl`、`python-docx`、`Pillow`、`matplotlib` |
-| 字体 | KaiTi（楷体）与 Times New Roman；字体文件不随项目分发 |
+| Python | 3.10+；依赖 `openpyxl`、`python-docx`、`Pillow`、`matplotlib`；取A股行情可选 `tushare` |
+| 字体 | KaiTi（楷体）与 Times New Roman；字体文件不随项目分发，放在工作区 `fonts/`（simkai.ttf、times*.ttf）即可自动发现 |
+| 行情数据（可选） | Tushare Pro 账号；凭证放环境变量 `TUSHARE_TOKEN` 或本机 `config.local.json` |
 | 内置 PDF 导出 | Windows + Microsoft Word 桌面版 |
 | 其他导出环境 | 另接可用的文档导出引擎，并重新核验字体、字段和分页 |
 
@@ -90,7 +91,7 @@ python -m pip install -r requirements.txt
 
 围绕行业格局、公司竞争力和投资逻辑展开分析，
 沿用原模型的预测与估值方法，将模型数据融入盈利与估值论证。
-采用蓝灰风格；中文楷体，英文及数字 Times New Roman。
+采用默认机构研究风格；中文楷体，英文及数字 Times New Roman。
 重要经营与财务数据、有价值的补充图表整理到附录。
 
 交付可编辑 Word、同版 PDF 和独立底稿。
@@ -108,32 +109,47 @@ python -m pip install -r requirements.txt
 <a id="features"></a>
 ## 核心能力
 
+### 先想清楚，再动笔
+
+写作前先完成研究底稿：核心研究问题、现价隐含条件与预期差、3–5张“主张—证据—机制—反证”论点卡，以及估值锚与价值构成。正文章节和论点只从底稿展开；成稿再由独立评审按七维度量表打分，未达门槛回到对应环节修订。
+
+### 一份规格生成整本报告
+
+全文写成一份 JSON 报告规格，`build_report.py` 先检查（研究底稿是否存在、首条要点是否说明预期差、大幅偏离现价是否有对账章节、失真倍数是否显示 N/M、图表来源是否齐全），再生成可编辑 Word；换公司不需要写装配代码。来源账本检查器拦截截止日后的信息。
+
 ### 让模型成为研究论证的一部分
 
 从供需、竞争格局、产品与客户出发，将研究判断落到销量、价格、份额、成本、资本开支与现金流。估值章节解释利润基期、估值依据、情景差异和价值区间；详细模型检查保存在底稿。
 
 ### 用专业图表表达投资观点
 
-图表从模型与来源数据绘制，使用结论式标题。通栏图与双图组合共享清晰的宽度边界，统一图例、坐标轴和数据标签字号。中文楷体、英文及数字 Times New Roman 贯穿正文、图表和表格。
+图表从模型、来源数据与逐日行情绘制，按问题选图：规模与增速用柱线组合图，结构用环形图，趋势用渐变面积图，两期对比用哑铃图，估值用价值桥、区间图与敏感性热力图。预测期柱体变浅并以虚线标注；首页股价图使用逐日连续数据并叠加基准指数。图表标题采用“图 1：对象（单位）”的中文研报格式，中文楷体、英文及数字 Times New Roman 贯穿全文。
 
 ### 让正文易读，让附录可查
 
 正文突出判断与证据，附录系统呈现经营驱动、财务预测、估值参数及补充研究。附录采用浅底深字标题、白底列头、细分隔线和重点行轻填充，保留完整数据与查阅层级。
+
+### 专业用语与自动检查
+
+内置研报用语规范：以“我们预计”为叙述主体，标题“类别：判断”，单位写入括号，资料来源统一为“机构，机构”格式。生成前自动拦截内部过程用语、截止日后的信息、估值输入时点错配、空白风险单元格和缺少反向风险的风险表；附录表格按年份表头从模型取数，避免错列。
 
 ### 保留简洁出处与完整底稿
 
 图表下方只展示简短资料来源；完整链接、披露时间、原始定位及 Excel 单元格映射放入独立底稿。历史研究按截止日筛选可用信息，预测期间明确标识。
 
 <a id="design"></a>
-## 五套风格，同一研究标准
+## 六套风格，同一研究标准
 
-配色、章节形式和间距可切换，字体与图表规范保持一致。
+默认 `institutional`（机构研究）：海军蓝单主色、细线分隔与留白、三线表与浅灰预测列；封面为品牌栏、双色通栏与左右双栏（公司资料、股价表现、估值摘要、涨跌幅比较｜投资要点、风险提示、主要财务指标）；正文“1 / 1.1”编号、首行缩进，文末附重要声明。可在本机配置研究机构名称、英文名与 logo。
 
-![五套研报风格对照：蓝灰、森林绿、酒红、墨金、石墨青绿，均使用同一组合成数据](docs/assets/theme-gallery.png)
+另有五套色带风格可选，配色、章节形式和间距可切换，字体与图表规范保持一致：
+
+![五套色带风格对照：蓝灰、森林绿、酒红、墨金、石墨青绿，均使用同一组合成数据](docs/assets/theme-gallery.png)
 
 | 风格 | 配置名称 | 视觉特点 |
 | --- | --- | --- |
-| **蓝灰 · 默认** | `blue_gray` | 深蓝章节带、蓝灰图题、浅蓝灰表格 |
+| **机构研究 · 默认** | `institutional` | 海军蓝细线、三线表、浅灰预测列、中文研报封面 |
+| **蓝灰** | `blue_gray` | 深蓝章节带、蓝灰图题、浅蓝灰表格 |
 | **森林绿与鼠尾草** | `forest_sage` | 浅底深绿章节、柔和辅助色、稍舒展的行距 |
 | **酒红与石板灰** | `burgundy_slate` | 酒红章节带、暖灰表格、紧凑正文 |
 | **墨色与暖金** | `ink_gold` | 墨色标题、暖金细线、浅暖灰表格 |
@@ -151,7 +167,12 @@ python -m pip install -r requirements.txt
 在已安装 Skill 的根目录创建 `config.local.json`：
 
 ```json
-{"research_brand": "示例策略研究"}
+{
+  "research_brand": "示例策略研究",
+  "research_brand_en": "SAMPLE STRATEGY RESEARCH",
+  "brand_logo": "brand/logo.png",
+  "brand_logo_header": "brand/logo-mono.png"
+}
 ```
 
 该文件已加入 Git 忽略规则，公共发布包不包含本机配置。单次指定的名称优先于默认值。
@@ -162,7 +183,7 @@ python -m pip install -r requirements.txt
 from research_editorial_layout import EditorialReport, Theme
 import chart_style as charts
 
-style_name = "ink_gold"
+style_name = "institutional"
 charts.configure(theme=style_name)  # 创建图表前设置
 report = EditorialReport(
     company="公司名称",
@@ -202,11 +223,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "skills/ah-equity-research/s
 | 完整研究工作流 | [SKILL.md](skills/ah-equity-research/SKILL.md) |
 | Excel 模型的读取与映射 | [模型约定](skills/ah-equity-research/references/model-contract.md) |
 | 资料来源、接口与历史时点 | [数据来源](skills/ah-equity-research/references/data-sources.md) |
+| 写作前的研究底稿 | [研究底稿](skills/ah-equity-research/references/research-brief.md) |
 | 投资逻辑与估值论证 | [研究与估值](skills/ah-equity-research/references/research-and-valuation.md) |
-| 专业研报表达 | [行文规范](skills/ah-equity-research/references/writing-style.md) |
+| 专业研报表达 | [行文规范](skills/ah-equity-research/references/writing-style.md) · [用语与格式](skills/ah-equity-research/references/terminology.md) |
+| 报告规格与生成命令 | [报告规格](skills/ah-equity-research/references/report-spec.md) |
 | 章节结构、图表与附录 | [报告蓝图](skills/ah-equity-research/assets/report-blueprint.md) · [版式规范](skills/ah-equity-research/references/report-design.md) |
 | 主题配色与自定义名称 | [风格配置](skills/ah-equity-research/references/style-presets.md) |
-| 数字核对与最终页面验收 | [质量检查](skills/ah-equity-research/references/quality-gates.md) |
+| 数字核对与最终页面验收 | [质量检查](skills/ah-equity-research/references/quality-gates.md) · [评审量表](skills/ah-equity-research/references/review-rubric.md) |
 
 <details>
 <summary>仓库结构与辅助工具</summary>
@@ -218,10 +241,16 @@ skills/ah-equity-research/
 ├── assets/                  # 报告蓝图
 ├── references/              # 研究、估值、写作与设计规范
 └── scripts/
+    ├── build_report.py              # 报告规格(JSON) → 检查 → 可编辑 Word（v2主入口）
+    ├── chart_templates.py           # 组合图/环形/面积/哑铃/价值桥/热力图/估值区间/逐日股价等模板
+    ├── fetch_market_data.py         # Tushare 逐日行情、基准指数与涨跌幅（截止日前）
+    ├── reverse_valuation.py         # 现价反推、价值拆分、敏感性网格
+    ├── source_ledger.py             # 来源账本检查：截止日后信息、未登记来源
+    ├── probe_data_sources.py        # 探测实际可用的数据接口与公告网站
     ├── inspect_model.py             # 盘点模型结构，提取公式与缓存
     ├── research_editorial_layout.py # 装配可编辑 Word
     ├── chart_style.py               # 图表字体、配色与导出
-    ├── design_presets.py            # 五套风格参数
+    ├── design_presets.py            # 六套风格参数
     ├── preview_styles.py            # 合成数据风格预览
     └── export_word.ps1              # Windows Word → PDF
 ```
@@ -234,7 +263,7 @@ skills/ah-equity-research/
 这是供 Codex 执行的 Agent Skill，包含研究工作流、写作规范与排版工具。Agent 需要结合实际模型和资料完成研究、核对与导出；辅助脚本负责各自的具体环节。
 
 **需要金融数据 API 吗？**  
-可以使用已有 CSV/XLSX 导出、公告与财报。若需要金融终端或付费接口，使用你已有的账号与权限；仓库不附带数据凭证或通用接入承诺。
+可以使用已有 CSV/XLSX 导出、公告与财报；有 Tushare Pro 账号时，`fetch_market_data.py` 可自动取首页股价图与涨跌幅所需行情。若需要金融终端或付费接口，使用你已有的账号与权限；仓库不附带数据凭证或通用接入承诺。
 
 **会修改我的原始模型吗？**  
 默认只读原模型，沿用原预测和估值方法。补充测算另行记录；`inspect_model.py` 读取已有公式与缓存，不负责计算 Excel 公式。

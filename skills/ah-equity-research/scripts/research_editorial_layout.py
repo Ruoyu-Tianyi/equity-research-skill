@@ -53,8 +53,37 @@ def load_research_brand(research_brand=None):
     return brand.strip()
 
 
+def load_brand_assets():
+    """Optional local brand assets from config.local.json (never shipped).
+
+    Keys: research_brand_en, brand_logo, brand_logo_header. Paths may be
+    absolute or relative to the skill root or the workspace two levels above.
+    Missing files resolve to None so reports still build without a logo.
+    """
+    root = Path(__file__).resolve().parents[1]
+    try:
+        settings = json.loads((root / 'config.local.json').read_text(encoding='utf-8-sig'))
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+    def find(value):
+        if not value: return None
+        cand = Path(value)
+        for path in ([cand] if cand.is_absolute() else [root / cand, root.parents[1] / cand]):
+            if path.is_file(): return path
+        return None
+    return {'en': str(settings.get('research_brand_en', '') or '').strip(),
+            'logo': find(settings.get('brand_logo')),
+            'logo_header': find(settings.get('brand_logo_header') or settings.get('brand_logo'))}
+
+
+def _run_fill(run, color):
+    _replace(run._r.get_or_add_rPr(), 'shd', _element('shd', val='clear', color='auto', fill=color))
+
+
 @dataclass(frozen=True)
 class Theme:
+    # 'editorial' = colour bands (blue_gray etc.); 'institutional' = hairline rules, no fills.
+    family: str = 'editorial'
     navy: str = '24445C'
     caption_fill: str = '4C687B'
     caption_text_color: str = 'FFFFFF'
@@ -86,13 +115,19 @@ class Theme:
     margin_bottom_cm: float = 1.65
 
     @classmethod
-    def preset(cls, name='blue_gray', **overrides):
+    def preset(cls, name='institutional', **overrides):
         from design_presets import get_preset
         settings = get_preset(name)['theme'].copy()
         settings.update(overrides)
         return cls(**settings)
 
+    @property
+    def institutional(self):
+        return self.family == 'institutional'
+
     def appendix(self):
+        if self.family == 'institutional':
+            return replace(self, caption_font_pt=8.8, body_after_pt=4)
         return replace(self, caption_fill=self.pale, caption_text_color=self.navy,
                        caption_font_pt=8.8, caption_line_pt=15.5,
                        table_header_fill='FFFFFF', key_fill=self.pale,
@@ -154,6 +189,14 @@ def _caption(paragraph, theme):
     paragraph.paragraph_format.line_spacing=Pt(theme.caption_line_pt if theme.color_blocks else 14)
     paragraph.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.LEFT
     m=re.match(r'^([图表]\s*\d+)\s+(.*)$',text)
+    if m and theme.institutional:
+        # Label style: "图 n" in a small navy tag, bold title, hairline below.
+        paragraph.paragraph_format.line_spacing=Pt(15)
+        paragraph.paragraph_format.space_before=Pt(7); paragraph.paragraph_format.space_after=Pt(3)
+        # Chinese sell-side convention: "图 1：标题（单位）", bold, ruled below.
+        _border(paragraph,'bottom',theme.navy,6,2)
+        _font(paragraph.add_run(m.group(1)+'：'+m.group(2)),theme.caption_font_pt,theme.navy,True,theme.heading_east_asia,theme.latin)
+        return
     if m and theme.color_blocks:
         _fill(paragraph,theme.caption_fill)
         _font(paragraph.add_run(' '+m.group(1)+'  '+m.group(2)),theme.caption_font_pt,theme.caption_text_color,True,theme.heading_east_asia,theme.latin)
@@ -172,8 +215,8 @@ def appendix_heading(paragraph, theme, level=1):
     pf.space_before=Pt(10 if level==1 else 7);pf.space_after=Pt(5 if level==1 else 3)
     pf.line_spacing=Pt(20 if level==1 else 16)
     if level==1:
-        if theme.color_blocks:_fill(paragraph,theme.pale)
-        _border(paragraph,'bottom',theme.slate,4,1)
+        if theme.color_blocks and not theme.institutional:_fill(paragraph,theme.pale)
+        _border(paragraph,'bottom',theme.navy if theme.institutional else theme.slate,6 if theme.institutional else 4,1)
     for run in paragraph.runs:
         _font(run,13 if level==1 else 11,theme.navy,True,theme.heading_east_asia,theme.latin)
 
@@ -190,12 +233,14 @@ def _field(paragraph, instruction):
 def _numeric(value):
     """Only complete scalar expressions; a sentence beginning with digits is text."""
     text = str(value).strip()
-    return bool(re.fullmatch(r'(?:[+-]?\(?[\d,]+(?:\.\d+)?\)?(?:%|x|倍|元|年)?|—|–|-|N\.?M\.?|N/A)', text, re.I))
+    return bool(re.fullmatch(r'(?:[+-]?\(?[\d,]+(?:\.\d+)?\)?(?:%|x|倍|元|年)?|—|–|-|N\.?M\.?|N/M|N/A)', text, re.I))
 
 
 class ResearchEditorialLayout:
     def __init__(self, company, ticker='', date='', report_type='公司深度研究', theme=None,
-                 research_brand=None):
+                 research_brand=None, footer_note=None, brand_assets=None):
+        self.footer_note = footer_note
+        self.brand_assets = load_brand_assets() if brand_assets is None else brand_assets
         self.theme = theme or Theme()
         self.research_brand = load_research_brand(research_brand)
         self.doc = Document()
@@ -267,6 +312,8 @@ class ResearchEditorialLayout:
 
     def _running_furniture(self, section):
         t = self.theme
+        if t.institutional:
+            return self._institutional_furniture(section)
         p = section.header.paragraphs[0]
         p.style = self.doc.styles['Normal']; p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p.paragraph_format.tab_stops.clear_all()
@@ -280,8 +327,86 @@ class ResearchEditorialLayout:
         p.paragraph_format.tab_stops.clear_all()
         p.paragraph_format.space_before = Pt(3); p.paragraph_format.line_spacing = Pt(10)
         p.paragraph_format.tab_stops.add_tab_stop(Cm(self.full_width_cm), WD_TAB_ALIGNMENT.RIGHT)
-        _font(p.add_run(self.company + ('  |  ' + self.date if self.date else '')), 7.5, t.muted)
+        _font(p.add_run(self.company + ('  |  ' + self.date if self.date else '')
+                        + ('  |  ' + self.footer_note if self.footer_note else '')), 7.5, t.muted)
         p.add_run('\t'); _font(_field(p, 'PAGE'), 8, t.muted)
+        if t.institutional: _border(p, 'top', t.rule, 3, 4)
+
+    def _institutional_furniture(self, section):
+        t = self.theme; brand = self.research_brand or self.report_type
+        p = section.header.paragraphs[0]
+        p.style = self.doc.styles['Normal']; p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.paragraph_format.tab_stops.clear_all(); p.paragraph_format.left_indent = Cm(0)
+        p.paragraph_format.space_after = Pt(3); p.paragraph_format.line_spacing = 1.0
+        p.paragraph_format.tab_stops.add_tab_stop(Cm(self.full_width_cm), WD_TAB_ALIGNMENT.RIGHT)
+        logo = self.brand_assets.get('logo_header')
+        if logo:
+            p.add_run().add_picture(str(logo), height=Cm(.42)); p.add_run(' ')
+        _font(p.add_run(brand), 8.5, t.navy, True, t.heading_east_asia)
+        label = f"{self.report_type}｜{self.company}" + (f" {self.ticker}" if self.ticker else '')
+        _font(p.add_run('\t' + label), 8, t.muted, east_asia=t.heading_east_asia)
+        _border(p, 'bottom', t.navy, 6, 3)
+        p = section.footer.paragraphs[0]
+        p.style = self.doc.styles['Normal']; p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.paragraph_format.tab_stops.clear_all(); p.paragraph_format.left_indent = Cm(0)
+        p.paragraph_format.space_before = Pt(3); p.paragraph_format.line_spacing = Pt(10)
+        p.paragraph_format.tab_stops.add_tab_stop(Cm(self.full_width_cm), WD_TAB_ALIGNMENT.RIGHT)
+        _font(p.add_run(brand + ('｜' + self.footer_note if self.footer_note else '')), 7.5, t.muted)
+        p.add_run('\t'); _font(_field(p, 'PAGE'), 8.5, t.navy, True)
+        _border(p, 'top', t.rule, 3, 4)
+
+    def _masthead(self):
+        """Cover masthead: logo, bilingual brand, report tag and date, double rule."""
+        t = self.theme; brand = self.research_brand or ''
+        logo = self.brand_assets.get('logo'); en = self.brand_assets.get('en', '')
+        widths = [1.55, self.full_width_cm - 1.55 - 4.6, 4.6] if logo else [self.full_width_cm - 4.6, 4.6]
+        table = self._table_shell(widths); row = table.add_row()
+        cells = list(row.cells)
+        for c, w in zip(cells, widths):
+            self._cell(c, w, 0, 0); c.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        k = 0
+        if logo:
+            q = cells[0].paragraphs[0]; q.paragraph_format.line_spacing = 1.0
+            q.paragraph_format.left_indent = Cm(0); q.add_run().add_picture(str(logo), height=Cm(1.3)); k = 1
+        q = cells[k].paragraphs[0]; q.paragraph_format.line_spacing = Pt(19); q.paragraph_format.left_indent = Cm(.1)
+        _font(q.add_run(brand or self.report_type), 15, t.navy, True, t.heading_east_asia)
+        if en:
+            q2 = cells[k].add_paragraph(); q2.paragraph_format.line_spacing = Pt(10); q2.paragraph_format.left_indent = Cm(.12)
+            r2 = _font(q2.add_run(en), 6.8, t.muted, False, t.heading_east_asia)
+            _replace(r2._r.get_or_add_rPr(), 'spacing', _element('spacing', val=30))
+        q = cells[-1].paragraphs[0]; q.alignment = WD_ALIGN_PARAGRAPH.RIGHT; q.paragraph_format.line_spacing = Pt(17)
+        _font(q.add_run('研究报告'), 12, t.navy, True, t.heading_east_asia)
+        if self.date:
+            q2 = cells[-1].add_paragraph(); q2.alignment = WD_ALIGN_PARAGRAPH.RIGHT; q2.paragraph_format.line_spacing = Pt(13)
+            _font(q2.add_run(self.date), 8.5, t.muted)
+        rule = self.doc.add_paragraph(); rule.paragraph_format.line_spacing = Pt(2)
+        rule.paragraph_format.space_before = Pt(4); rule.paragraph_format.space_after = Pt(8)
+        _border(rule, 'top', t.navy, 18, 0); _border(rule, 'bottom', t.gold, 6, 1)
+
+    def _cover_banner(self, sidebar_width_cm, gap_cm):
+        """Two-tone banner aligned to the cover columns: report type | company (code)."""
+        t = self.theme; widths = [sidebar_width_cm + gap_cm / 2, self.full_width_cm - sidebar_width_cm - gap_cm / 2]
+        table = self._table_shell(widths); row = table.add_row()
+        label = self.company + (f'（{self.ticker}）' if self.ticker else '')
+        for cell, w, text, fill in zip(row.cells, widths, (self.report_type, label), (t.slate, t.navy)):
+            self._cell(cell, w, 4, 4.5)
+            _replace(cell._tc.get_or_add_tcPr(), 'shd', _element('shd', val='clear', color='auto', fill=fill))
+            q = cell.paragraphs[0]; q.alignment = WD_ALIGN_PARAGRAPH.CENTER; q.paragraph_format.line_spacing = Pt(19)
+            q.paragraph_format.left_indent = Cm(0); q.paragraph_format.right_indent = Cm(0)
+            _font(q.add_run(text), 13, 'FFFFFF', True, t.heading_east_asia)
+        gap = self.doc.add_paragraph(); gap.paragraph_format.line_spacing = Pt(4); gap.paragraph_format.space_after = Pt(2)
+
+    def disclosure(self, text, title='重要声明'):
+        """Closing statement block in small muted type, set off by a hairline."""
+        h = self.doc.add_paragraph(); h.paragraph_format.space_before = Pt(18)
+        h.paragraph_format.space_after = Pt(3); h.paragraph_format.keep_with_next = True
+        _border(h, 'top', self.theme.navy, 6, 4)
+        _font(h.add_run(title), 9, self.theme.navy, True, self.theme.heading_east_asia)
+        for para in [x for x in str(text).split('\n') if x.strip()]:
+            q = self.doc.add_paragraph(); q.paragraph_format.line_spacing = Pt(12)
+            q.paragraph_format.space_after = Pt(3)
+            _font(q.add_run(para), 8, self.theme.muted, False, self.theme.body_east_asia)
+        return h
 
     def _columns(self, widths, gap_cm=.65, start=WD_SECTION_START.CONTINUOUS):
         section = self.doc.add_section(start); self._configure_section(section)
@@ -304,15 +429,34 @@ class ResearchEditorialLayout:
         p.style = self.doc.styles['Normal']; p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p.paragraph_format.tab_stops.clear_all()
         p.paragraph_format.tab_stops.add_tab_stop(Cm(self.full_width_cm), WD_TAB_ALIGNMENT.RIGHT)
-        _font(p.add_run(self.company + ('  |  ' + self.date if self.date else '')),7.5,self.theme.muted)
+        if self.theme.institutional:
+            _font(p.add_run((self.research_brand or self.company) + ('｜' + self.footer_note if self.footer_note else '')),7.5,self.theme.muted)
+            _border(p,'top',self.theme.rule,3,4)
+        else:
+            _font(p.add_run(self.company + ('  |  ' + self.date if self.date else '')),7.5,self.theme.muted)
         p.add_run('\t'); _font(_field(p,'PAGE'),8,self.theme.muted)
         # The first-page header is deliberately empty; this native full-width title block carries identity.
+        if self.theme.institutional:
+            self._masthead()
+            self._cover_banner(sidebar_width_cm, gap_cm)
+            self.doc.add_paragraph(title, 'Title')
+            if subtitle: self.doc.add_paragraph(subtitle, 'Subtitle')
+            self._cover_left = sidebar_width_cm
+            self._cover_right = self.full_width_cm - sidebar_width_cm - gap_cm
+            self._columns([self._cover_left, self._cover_right], gap_cm)
+            self.current_width_cm = self._cover_left; self._cover_phase = 'sidebar'
+            return
         p = self.doc.add_paragraph()
-        p.paragraph_format.tab_stops.add_tab_stop(Cm(self.full_width_cm), WD_TAB_ALIGNMENT.RIGHT)
-        if self.theme.color_blocks:
+        # Right tab sits inside the band so Word does not push the date past its edge.
+        p.paragraph_format.tab_stops.add_tab_stop(Cm(self.full_width_cm - .25), WD_TAB_ALIGNMENT.RIGHT)
+        band = self.theme.color_blocks and not self.theme.institutional
+        if band:
             _fill(p,self.theme.navy);p.paragraph_format.line_spacing=Pt(18)
-        _font(p.add_run('  '+(self.research_brand or self.report_type)), 9, 'FFFFFF' if self.theme.color_blocks else self.theme.navy, True, self.theme.heading_east_asia)
-        _font(p.add_run('\t' + self.date+'  '), 9, 'FFFFFF' if self.theme.color_blocks else self.theme.muted)
+        else:
+            p.paragraph_format.line_spacing=Pt(15); p.paragraph_format.space_after=Pt(6)
+            _border(p,'bottom',self.theme.navy,12,3)
+        _font(p.add_run(('  ' if band else '')+(self.research_brand or self.report_type)), 9, 'FFFFFF' if band else self.theme.navy, True, self.theme.heading_east_asia)
+        _font(p.add_run('\t' + self.date), 9, 'FFFFFF' if band else self.theme.muted)
         p = self.doc.add_paragraph(); p.paragraph_format.space_after = Pt(5)
         _font(p.add_run(self.company + ('  ' + self.ticker if self.ticker else '')), 13, self.theme.navy, True, self.theme.heading_east_asia)
         self.doc.add_paragraph(title, 'Title')
@@ -334,7 +478,8 @@ class ResearchEditorialLayout:
         self._columns([self.full_width_cm], 0, WD_SECTION_START.NEW_PAGE)
         self._cover_phase = None; self.current_width_cm = self.full_width_cm
 
-    def paragraph(self, text='', lead=None, size=None, after=None, color=None, keep_next=False, bold_lead=None):
+    def paragraph(self, text='', lead=None, size=None, after=None, color=None, keep_next=False, bold_lead=None,
+                  bullet=False, indent=None):
         if bold_lead is not None:
             if lead is not None: raise ValueError('Use lead or bold_lead, not both.')
             lead = bold_lead
@@ -343,6 +488,11 @@ class ResearchEditorialLayout:
         p.paragraph_format.line_spacing = Pt(13 if self._cover_phase == 'sidebar' else t.leading_pt)
         p.paragraph_format.space_after = Pt(after if after is not None else self.content_theme.body_after_pt)
         p.paragraph_format.keep_with_next = keep_next
+        if indent is None: indent = t.institutional and not self._cover_phase and not self._appendix and not bullet
+        if indent: p.paragraph_format.first_line_indent = Pt(size * 2)   # 首行缩进两字
+        if bullet:
+            p.paragraph_format.left_indent = Cm(.42); p.paragraph_format.first_line_indent = Cm(-.34)
+            _font(p.add_run('■ '), size * .55, t.navy, False, t.body_east_asia)
         if lead:
             _font(p.add_run(lead), size, color or t.navy, True, t.lead_east_asia,t.latin)
             if text.startswith(lead): text = text[len(lead):]
@@ -364,7 +514,7 @@ class ResearchEditorialLayout:
         return self.theme.appendix() if self._appendix else self.theme
 
     def begin_appendix(self, title, number=None, page_break=True):
-        self._appendix=True
+        self._appendix=True; self._h1_num=None
         return self.heading(title,1,number=number,page_break=page_break)
 
     def end_appendix(self):
@@ -388,13 +538,43 @@ class ResearchEditorialLayout:
             _replace(p._p.get_or_add_pPr(),'outlineLvl',_element('outlineLvl',val='9'))
             for run in p.runs: _font(run, 10.5, self.theme.navy, True, self.theme.heading_east_asia)
             p.paragraph_format.space_before = Pt(7); p.paragraph_format.space_after = Pt(4)
-            if self.theme.color_blocks:
+            if self.theme.institutional:
+                if self._cover_phase=='sidebar':
+                    _panel(p,self.theme.pale,self.theme.navy); p.paragraph_format.line_spacing=Pt(17)
+                else:
+                    p.paragraph_format.line_spacing=Pt(16); _border(p,'bottom',self.theme.navy,10,2)
+                    for run in p.runs:_font(run,11.5,self.theme.navy,True,self.theme.heading_east_asia)
+            elif self.theme.color_blocks:
                 dark=self._cover_phase=='main'
                 _panel(p,self.theme.navy if dark else self.theme.pale,None if dark else self.theme.gold)
                 p.paragraph_format.line_spacing=Pt(17)
                 for run in p.runs:_font(run,10.5,'FFFFFF' if dark else self.theme.navy,True,self.theme.heading_east_asia)
         elif self._appendix:
             appendix_heading(p,self.theme,level)
+        elif self.theme.institutional:
+            if level==1:
+                # Gold chapter numeral, navy title, navy rule below.
+                p.paragraph_format.space_before=Pt(14); p.paragraph_format.space_after=Pt(7)
+                p.paragraph_format.line_spacing=Pt(22)
+                for run in list(p.runs): run._r.getparent().remove(run._r)
+                num = str(number) if number is not None else None
+                self._h1_num = num; self._h2_count = 0
+                if num:
+                    # Gold numeral, not a shaded box: Word's TOC copies run shading but
+                    # recolours the text, which would hide a white-on-navy number.
+                    _font(p.add_run(num),17,self.theme.gold,True,self.theme.heading_east_asia,self.theme.latin)
+                    _font(p.add_run('  '),14,self.theme.navy,True,self.theme.heading_east_asia,self.theme.latin)
+                _font(p.add_run(text),14.5,self.theme.navy,True,self.theme.heading_east_asia,self.theme.latin)
+                _border(p,'bottom',self.theme.navy,8,4)
+            elif level==2:
+                p.paragraph_format.space_before=Pt(9); p.paragraph_format.space_after=Pt(3)
+                p.paragraph_format.left_indent=Cm(.05)
+                _border(p,'left',self.theme.navy,18,5)
+                if getattr(self,'_h1_num',None):
+                    self._h2_count = getattr(self,'_h2_count',0) + 1
+                    label = f'{self._h1_num}.{self._h2_count} '
+                    p.runs[0].text = label + p.runs[0].text; value = label + text
+                for run in p.runs:_font(run,11.5,self.theme.navy,True,self.theme.heading_east_asia,self.theme.latin)
         elif self.theme.color_blocks:
             if level==1:
                 mode=self.theme.chapter_style
@@ -415,7 +595,7 @@ class ResearchEditorialLayout:
     def chapter(self, title, number=None): return self.heading(title, 1, number=number)
     def subheading(self, title): return self.heading(title, 2)
 
-    def toc(self, title='目录', levels='1-2'):
+    def toc(self, title='目录', levels='1-2', figures_title=None):
         """Native dynamic TOC; update Word fields after save, before PDF export."""
         for name,size,before,after in [('toc 1',10.5,3,1),('toc 2',9.5,0,1)]:
             # Built-in flag matters: custom TOC 1 is renamed by Word and ignored.
@@ -426,9 +606,19 @@ class ResearchEditorialLayout:
             st.paragraph_format.space_before=Pt(before);st.paragraph_format.space_after=Pt(after)
             st.paragraph_format.line_spacing=Pt(14)
         p = self.doc.add_paragraph(); p.paragraph_format.space_after = Pt(10)
-        if self.theme.color_blocks:_panel(p,self.theme.navy);p.paragraph_format.line_spacing=Pt(22)
-        _font(p.add_run(title),14,'FFFFFF' if self.theme.color_blocks else self.theme.navy,True,self.theme.heading_east_asia)
+        band=self.theme.color_blocks and not self.theme.institutional
+        if band:_panel(p,self.theme.navy);p.paragraph_format.line_spacing=Pt(22)
+        else:p.paragraph_format.line_spacing=Pt(20);_border(p,'bottom',self.theme.navy,10,3)
+        _font(p.add_run(title),14,'FFFFFF' if band else self.theme.navy,True,self.theme.heading_east_asia)
         p = self.doc.add_paragraph(); _field(p, f'TOC \\o "{levels}" \\h \\z \\u')
+        self._figure_toc = None
+        if figures_title:
+            # 图表目录: built from the Caption style, set in the lighter TOC 2 style.
+            h = self.doc.add_paragraph(); h.paragraph_format.space_before = Pt(14); h.paragraph_format.space_after = Pt(8)
+            h.paragraph_format.line_spacing = Pt(20); _border(h,'bottom',self.theme.navy,10,3)
+            _font(h.add_run(figures_title),14,self.theme.navy,True,self.theme.heading_east_asia)
+            f = self.doc.add_paragraph(); _field(f, 'TOC \\h \\z \\t "题注,2,Caption,2,caption,2"')
+            self._figure_toc = (h, f)
         return p
 
     def cover(self, params, theses, forecast=None):
@@ -536,7 +726,17 @@ class ResearchEditorialLayout:
         # for its 4.5pt cell margin so the table outer edge matches the band.
         _replace(table._tbl.tblPr, 'tblInd', _element('tblInd', w=90, type='dxa'))
         if keep_together is None: keep_together = len(rows)<=7
-        inferred = ['left'] + ['right' if rows and all(_numeric(row[ci]) for row in rows) else 'left' for ci in range(1,n)]
+        # Alignment is decided per column, never per cell: a numeric column keeps
+        # N/M, — and percentages right-aligned; a text column keeps "2027年" left.
+        def _numeric_column(ci):
+            vals = [str(row[ci]).strip() for row in rows if str(row[ci]).strip()]
+            if not vals: return False
+            hits = [v for v in vals if _numeric(v)]
+            real = [v for v in hits if re.search(r'\d', v) and not re.search(r'年', v)]
+            return len(hits) >= .6 * len(vals) and len(real) >= 1 and len(real) >= .3 * len(vals)
+        inferred = ['left'] + ['right' if rows and _numeric_column(ci) else 'left' for ci in range(1,n)]
+        # Institutional tables shade forecast columns (headers like 2026E) in light grey.
+        est_cols = {ci for ci,h in enumerate(headers) if ci>0 and re.search(r'\d{2}E\b|E$|预测', str(h).strip())} if t.institutional else set()
         for ri, values in enumerate([list(headers)]+rows):
             row = table.add_row(); row._tr.get_or_add_trPr().append(_element('cantSplit'))
             if ri==0: row._tr.get_or_add_trPr().append(_element('tblHeader'))
@@ -549,7 +749,7 @@ class ResearchEditorialLayout:
                 p.paragraph_format.keep_with_next = ri<=1 or (keep_together and ri<len(rows)) or (ri==len(rows) and bool(source))
                 p.paragraph_format.keep_together = True
                 if align: chosen = align[ci]
-                else: chosen = inferred[ci] if ri==0 else ('right' if ci>0 and _numeric(value) else 'left')
+                else: chosen = inferred[ci]
                 p.alignment = {'left':WD_ALIGN_PARAGRAPH.LEFT,'right':WD_ALIGN_PARAGRAPH.RIGHT,'center':WD_ALIGN_PARAGRAPH.CENTER}[chosen]
                 color=t.navy if ri==0 or ri-1 in subtotal_rows else t.ink
                 # Native superscript keeps compact valuation formulas editable.
@@ -559,13 +759,18 @@ class ResearchEditorialLayout:
                     run=_font(p.add_run(part[1:] if is_power else part),size,color,
                               ri==0 or ri-1 in subtotal_rows,t.heading_east_asia if ri==0 else t.body_east_asia)
                     if is_power:run.font.superscript=True
-                if ri==0:
+                if t.institutional:
+                    if ri==0:
+                        self._cell_rule(cell,'top',t.navy,8); self._cell_rule(cell,'bottom',t.navy,4)
+                    if ci in est_cols:
+                        _replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=t.pale))
+                elif ri==0:
                     self._cell_rule(cell,'top',t.rule,4); self._cell_rule(cell,'bottom',t.slate,4)
                     if header_fill:_replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=t.table_header_fill))
                 elif t.color_blocks:
                     fill=t.key_fill if ri-1 in subtotal_rows else t.zebra if ri%2==0 else 'FFFFFF'
                     _replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=fill))
-                if ri==len(rows): self._cell_rule(cell,'bottom',t.navy,6)
+                if ri==len(rows): self._cell_rule(cell,'bottom',t.navy,8 if t.institutional else 6)
                 if ri-1 in subtotal_rows: self._cell_rule(cell,'top',t.rule,3)
         if source or caption: self.source(source)
         else:
@@ -630,7 +835,7 @@ class ResearchEditorialLayout:
             p.paragraph_format.keep_with_next = True
             p.add_run(f'图 {self.figure_count}  {captions[k]}')
             self._content_caption(p)
-            if self.theme.color_blocks:
+            if self.theme.color_blocks and not self.theme.institutional:
                 _replace(cell._tc.get_or_add_tcPr(),'shd',_element('shd',fill=self.content_theme.caption_fill))
             p = image_row.cells[ci].paragraphs[0]; p.paragraph_format.keep_with_next = True
             self._picture(p,paths[k],width,max_height_cm)
