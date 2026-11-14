@@ -23,16 +23,20 @@ from research_editorial_layout import EditorialReport, Theme, _font  # noqa: E40
 import chart_templates as ct  # noqa: E402
 
 NM = "N/M"
-DEFAULT_DISCLAIMER = ("本报告基于研究截止日前的公开资料形成研究观点，事实数据均已注明来源，盈利预测、估值与情景分析为研究判断，存在不确定性；"
-                      "报告不构成任何证券的买卖建议、要约或邀约，所载信息在截止日后可能发生变化且不另行通知。")
+DEFAULT_DISCLAIMER = ("本报告基于研究截止日前的公开资料形成研究观点，事实数据均已注明来源，盈利预测、估值、评级与目标价为研究判断，存在不确定性；"
+                      "报告不构成对任何人的个性化投资建议或证券买卖要约，所载信息在截止日后可能发生变化且不另行通知，投资者应结合自身情况独立决策。")
 
 
 # ---------- number display ----------
 def fmt_num(v, digits=1):
-    if v is None or v == "":
+    if v == "":
+        return ""
+    if v is None:
         return "—"
     if isinstance(v, str):
         return v
+    if round(v, digits) == 0:
+        v = 0.0   # no "-0"
     return f"{v:,.{digits}f}"
 
 
@@ -164,6 +168,99 @@ def _strings(obj):
             if not k.startswith("_") and k not in ("research_brief", "path", "workbook", "model"): yield from _strings(v)
 
 
+# ---------- rating system (references/rating-system.md) ----------
+# Three-tier stock rating in the style of global bulge-bracket houses
+# (Buy / Neutral / Sell), plus a three-tier industry view (Overweight /
+# Neutral / Underweight). Ratings follow from the 12-month expected return
+# relative to the benchmark; they are never chosen independently of the target.
+RATING_BAND = 0.10
+STOCK_RATINGS = [("买入（Buy）", "未来12个月预期总回报相对基准指数超额收益 ≥ +10%"),
+                 ("中性（Neutral）", "未来12个月预期总回报相对基准指数超额收益介于 -10% 与 +10% 之间"),
+                 ("卖出（Sell）", "未来12个月预期总回报相对基准指数超额收益 ≤ -10%")]
+INDUSTRY_RATINGS = [("超配（Overweight）", "未来12个月行业基本面与估值吸引力优于基准指数，建议高于市场权重配置"),
+                    ("标配（Neutral）", "未来12个月行业表现预计与基准指数基本一致"),
+                    ("低配（Underweight）", "未来12个月行业表现预计弱于基准指数，建议低于市场权重配置")]
+RATING_INTRO = ("评级以报告发布日后12个月内的预期总回报（目标价相对当前股价的涨跌幅加预期股息率）相对基准指数的超额收益为依据。"
+                "A股基准为沪深300指数（科创板可用科创50指数），港股基准为恒生指数。目标价由报告所述估值方法得出，评级随目标价、股价或基准变化而调整。")
+
+
+def derive_rating(rt: dict, price: float) -> dict:
+    """rt: {target_price, dividend_yield?, benchmark_return?} -> expected/excess return and rating."""
+    tp = rt["target_price"]; exp = tp / price - 1 + rt.get("dividend_yield", 0.0)
+    excess = exp - rt.get("benchmark_return", 0.0)
+    name = "买入" if excess >= RATING_BAND else "卖出" if excess <= -RATING_BAND else "中性"
+    return {"expected_return": exp, "excess_return": excess, "rating": name}
+
+
+# ---------- financial statement pages ----------
+def resolve_fin_section(sec: dict, base: Path, model_path: str | None, years: list, price=None, shares=None,
+                        shared: dict | None = None) -> dict:
+    """Read named rows from the workbook by year header and compute ratio rows.
+
+    rows: {"label","row","key","scale"} reads a line; {"label","key","op",...} derives:
+      growth(of)            -> x_t / x_{t-1} - 1           (%)
+      ratio(of, over)       -> of / over                   (%) unless "pct": false
+      ratio_avg(of, over)   -> of / average(over_t, over_{t-1})  e.g. ROE (%)
+      per_share(of)         -> of * scale / shares  (shares in the same unit as the model's share count)
+      price_over(of)        -> price / of          (multiple, N/M rule applies)
+      neg(of)               -> -of                 (e.g. capex shown positive)
+      add(of, plus)         -> of + plus           (e.g. total liabilities)
+    Keys are shared across the sections of one fin_pages block (pass shared).
+    """
+    import openpyxl
+    path = base / (sec.get("workbook") or model_path or "")
+    if path not in _WB: _WB[path] = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    ws = _WB[path][sec["sheet"]]
+    header = next(ws.iter_rows(min_row=sec["header_row"], max_row=sec["header_row"], values_only=True))
+    cols = {}
+    for j, v in enumerate(header, 1):
+        k = _year_key(v)
+        if k and k not in cols: cols[k] = j
+    keys = [_year_key(y) for y in years]
+    prev = str(int(keys[0][:4]) - 1)
+    want = ([prev] if prev in cols else []) + keys
+    for k in keys:
+        if k not in cols: raise KeyError(f"{sec['sheet']}!{sec['header_row']} 表头没有年份 {k}")
+    data = shared if shared is not None else {}
+    out, pct, mult, sub, dig = [], [], [], [], {}
+    def series(key): return data[key]
+    for spec_row in sec["rows"]:
+        if spec_row.get("header"):
+            out.append([spec_row["label"]] + [""] * len(keys)); sub.append(len(out) - 1); continue
+        if "row" in spec_row:
+            vals = next(ws.iter_rows(min_row=spec_row["row"], max_row=spec_row["row"], values_only=True))
+            sc = spec_row.get("scale", 1.0)
+            v = [(vals[cols[k] - 1] * sc if isinstance(vals[cols[k] - 1], (int, float)) else None) for k in want]
+            if spec_row.get("blank_zero"):   # e.g. EPS not disclosed for a pre-IPO year
+                v = [None if x == 0 else x for x in v]
+        else:
+            op = spec_row["op"]; a = series(spec_row["of"]) if spec_row.get("of") else None
+            b = series(spec_row["over"]) if spec_row.get("over") else None
+            def div(x, y): return x / y if (x is not None and y not in (None, 0)) else None
+            if op == "growth":   # N/A when the base year is zero or negative
+                v = [None] + [a[i] / a[i - 1] - 1 if (a[i] is not None and a[i - 1] not in (None,) and a[i - 1] > 0) else None
+                              for i in range(1, len(a))]
+            elif op == "ratio": v = [div(x, y) for x, y in zip(a, b)]
+            elif op == "ratio_avg": v = [None] + [div(a[i], (b[i] + b[i - 1]) / 2 if None not in (b[i], b[i - 1]) else None) for i in range(1, len(a))]
+            elif op == "per_share": v = [div(x * spec_row.get("scale", 1.0), shares) if x is not None else None for x in a]
+            elif op == "price_over": v = [div(price, x) for x in a]
+            elif op == "neg": v = [None if x is None else -x for x in a]
+            elif op == "add": v = [None if None in (x, y) else x + y for x, y in zip(a, b if b else series(spec_row["plus"]))]
+            else: raise ValueError(f"未知op：{op}")
+            if op in ("growth", "ratio", "ratio_avg") and spec_row.get("pct", True):
+                v = [None if x is None else x * 100 for x in v]
+        if spec_row.get("key"): data[spec_row["key"]] = v
+        if spec_row.get("show", True):
+            out.append([spec_row["label"]] + v[len(want) - len(keys):]); i = len(out) - 1
+            if spec_row.get("op") in ("growth", "ratio", "ratio_avg") and spec_row.get("pct", True): pct.append(i)
+            if spec_row.get("op") == "price_over": mult.append(i)
+            if "digits" in spec_row: dig[str(i)] = spec_row["digits"]
+            if spec_row.get("bold"): sub.append(i)
+    return {"title": sec["title"], "unit": sec.get("unit"), "headers": [sec.get("first_header", "会计年度")] + list(years),
+            "rows": out, "percent_rows": pct, "multiple_rows": mult, "subtotal_rows": sub, "row_digits": dig,
+            "digits": sec.get("digits", 0)}
+
+
 # ---------- lint ----------
 def lint(spec: dict, base: Path) -> list[dict]:
     issues = []
@@ -186,6 +283,26 @@ def lint(spec: dict, base: Path) -> list[dict]:
         caps = [b.get("caption")] + [x.get("caption") for x in b.get("items", [])]
         for c in [c for c in caps if c]:
             if len(c) > 32: add("warn", f"body[{i}]", f"图表标题过长（{len(c)}字）：{c[:16]}…")
+    rt = spec.get("rating")
+    price_ = spec.get("cover", {}).get("valuation", {}).get("price")
+    if rt not in (None, False):
+        if not rt.get("target_price"): add("error", "rating", "评级须同时给出目标价 target_price（12个月）")
+        elif not price_: add("error", "rating", "评级须有当前股价（cover.valuation.price）")
+        else:
+            d = derive_rating(rt, price_)
+            if rt.get("rating") and not rt["rating"].startswith(d["rating"]):
+                add("error", "rating", f"评级“{rt['rating']}”与目标价不符：预期超额收益{d['excess_return']:+.1%}，按评级体系应为“{d['rating']}”")
+        if rt.get("change") not in (None, "首次覆盖", "维持", "上调", "下调"):
+            add("error", "rating", "评级变动只能为：首次覆盖、维持、上调、下调")
+    elif rt is None:
+        add("warn", "rating", "未设置评级与目标价；如不出具评级，设置 \"rating\": false")
+    for i, b in enumerate(spec.get("body", [])):
+        if b.get("type") == "fin_pages":
+            shared = {}
+            for side in ("left", "right"):
+                for sec in b.get(side, []):
+                    try: resolve_fin_section(sec, base, spec.get("meta", {}).get("model"), b["years"], b.get("price"), b.get("shares"), shared)
+                    except Exception as e: add("error", f"body[{i}]", f"fin_pages {sec.get('title')}：{e}")
     vi = spec.get("valuation_inputs")
     if spec.get("cover", {}).get("valuation", {}).get("base_value") is not None:
         if not vi:
@@ -333,6 +450,12 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
     t = r.theme
     # ---- cover ----
     r.begin_cover(cover["title"], subtitle=cover.get("subtitle"))
+    rt = spec.get("rating")
+    if rt:
+        price_ = cover.get("valuation", {}).get("price")
+        d = derive_rating(rt, price_)
+        r.rating_panel(rt.get("rating") or d["rating"], rt.get("change"), rt["target_price"], price_,
+                       unit=cover.get("valuation", {}).get("unit", "元"))
     r.h2("公司资料")
     r.table(["项目", "数值"], [[a, b] for a, b in cover.get("facts", [])], widths_cm=[2.0, 3.0], size=8.2)
     r.source(cover.get("facts_source", "公司公告"))
@@ -441,9 +564,25 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
         elif ty == "figure_pair":
             paths = [_resolve_image(it, base, figdir, it.get("id", f"fig{i}_{k}"), audits) for k, it in enumerate(b["items"])]
             r.figure_pair(paths, [it["caption"] for it in b["items"]], [it["source"] for it in b["items"]])
+        elif ty == "fin_pages":
+            r.begin_columns(b.get("title", "附表：财务报表和主要财务比率"))
+            shared = {}
+            for side in ("left", "right"):
+                if side == "right": r.next_column()
+                for sec in b.get(side, []):
+                    tb = resolve_fin_section(sec, base, meta.get("model"), b["years"], b.get("price"), b.get("shares"), shared)
+                    r.mini_heading(tb["title"], tb.get("unit"))
+                    n = len(tb["headers"]) - 1; lw = b.get("label_width_cm", 2.5)
+                    cw = (r.current_width_cm - lw) / n
+                    r.table(tb["headers"], _table_rows(tb), widths_cm=[lw] + [cw] * n, size=b.get("size", 7.4),
+                            subtotal_rows=tuple(tb["subtotal_rows"]), keep_together=True)
+            r.end_columns()
+            if b.get("source"): r.source(b["source"])
         elif ty == "page_break": r.page_break()
         elif ty == "end_appendix": r.end_appendix()
         else: raise ValueError(f"未知 block 类型：{ty}")
+    if spec.get("rating"):
+        r.rating_definitions(STOCK_RATINGS, INDUSTRY_RATINGS, RATING_INTRO)
     if spec.get("disclaimer", True):
         r.disclosure(spec.get("disclaimer_text") or DEFAULT_DISCLAIMER)
     out.parent.mkdir(parents=True, exist_ok=True)

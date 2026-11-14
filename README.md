@@ -6,7 +6,7 @@
 
 面向 **A 股与港股** 的中文研究工作流 · **Codex Agent Skill**
 
-[![Version](https://img.shields.io/badge/version-2.6.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
+[![Version](https://img.shields.io/badge/version-2.7.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](requirements.txt)
 [![Output](https://img.shields.io/badge/output-DOCX%20%2B%20PDF-4C687B?style=flat-square)](#preview)
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
@@ -228,6 +228,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "skills/ah-equity-research/s
 | 专业研报表达 | [行文规范](skills/ah-equity-research/references/writing-style.md) · [用语与格式](skills/ah-equity-research/references/terminology.md) |
 | 报告规格与生成命令 | [报告规格](skills/ah-equity-research/references/report-spec.md) |
 | 章节结构、图表与附录 | [报告蓝图](skills/ah-equity-research/assets/report-blueprint.md) · [版式规范](skills/ah-equity-research/references/report-design.md) |
+| 评级与目标价 | [评级体系](skills/ah-equity-research/references/rating-system.md) |
 | 主题配色与自定义名称 | [风格配置](skills/ah-equity-research/references/style-presets.md) |
 | 数字核对与最终页面验收 | [质量检查](skills/ah-equity-research/references/quality-gates.md) · [评审量表](skills/ah-equity-research/references/review-rubric.md) |
 

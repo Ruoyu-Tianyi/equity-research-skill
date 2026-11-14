@@ -47,6 +47,7 @@ python scripts/source_ledger.py support/sources.json --cutoff 2026-09-04 --spec 
 | `disclaimer` / `disclaimer_text` | 默认在末尾附“重要声明”并在页脚提示；`false`关闭，或提供自定义文字 |
 | `cover.performance` / `cover.authors` / `cover.related` | 封面左栏可选栏目：涨跌幅比较表（headers、rows）、研究员（name、contact）、相关研究（标题列表） |
 | `figure_toc` | 默认在目录后生成“图表目录”（Word字段，预览PDF中省略）；`false`关闭 |
+| `rating` | `{"rating","change","target_price","benchmark","benchmark_return","dividend_yield"}`；封面评级框与文末评级说明，规则见rating-system.md；`false`表示不出具评级 |
 | `meta.model` | 模型工作簿路径（相对spec），`model_table`默认从这里取数 |
 | `meta.stance` | `cautious` / `positive` / `neutral`；决定风险表必须包含的反向风险（cautious→须有“上行…”行，positive→须有“下行…”行） |
 | `peers` | 同业比较对象列表；少于2家给警告，须在正文说明原因或口径差异 |
@@ -64,6 +65,7 @@ python scripts/source_ledger.py support/sources.json --cutoff 2026-09-04 --spec 
 | `figure` | caption, source, path 或 chart, wide?, id? | 现成图片或由模板生成 |
 | `figure_pair` | items:[两个figure] | 双图半栏，各自标题与来源 |
 | `model_table` | sheet, header_row, years, rows:[{label,row,scale}], caption, source, widths?, digits?, row_digits?, percent_rows?, subtotal_rows?, workbook? | 从模型按**年份表头**定位列再取数；不存在的年份报错；单元格坐标写入manifest（support），不进成稿。来自Excel的表格一律使用它 |
+| `fin_pages` | title, years, price, shares, left:[sections], right:[sections], source | 整页双栏“财务报表和主要财务比率”。section：`{title, unit, sheet, header_row, rows}`；rows读取`{label,row,key,scale,blank_zero}`（blank_zero：0显示为“—”）或派生`{label,op,of,over|plus,key,pct,digits,show}`，op为growth（基期≤0时为空）、ratio、ratio_avg（如ROE）、per_share、price_over（P/E等，>100倍或≤0显示N/M）、neg、add；`{label, header:true}`为分组小标题；key在整个fin_pages内共享 |
 | `page_break` / `end_appendix` | — | 分页、退出附录模式 |
 
 封面股价图推荐`"price_chart": {"data": "market.json"}`（由`fetch_market_data.py`生成的逐日行情，自动绘制渐变面积图并叠加基准指数），`"performance": {"data": "market.json"}`生成涨跌幅比较表；历史不足的区间显示“—”。左栏内容过多会挤占右栏，栏目总高度需控制在一页内。

@@ -396,6 +396,78 @@ class ResearchEditorialLayout:
             _font(q.add_run(text), 13, 'FFFFFF', True, t.heading_east_asia)
         gap = self.doc.add_paragraph(); gap.paragraph_format.line_spacing = Pt(4); gap.paragraph_format.space_after = Pt(2)
 
+    # ---------- rating ----------
+    def rating_panel(self, rating, change=None, target_price=None, price=None, unit='元', horizon='12个月'):
+        """Cover rating box: '卖出（首次覆盖）' on navy, then target price, price and implied return."""
+        t = self.theme; w = self.current_width_cm
+        table = self._table_shell([w]); row = table.add_row(); cell = row.cells[0]
+        self._cell(cell, w, 5, 4)
+        _replace(cell._tc.get_or_add_tcPr(), 'shd', _element('shd', val='clear', color='auto', fill=t.navy))
+        q = cell.paragraphs[0]; q.alignment = WD_ALIGN_PARAGRAPH.CENTER; q.paragraph_format.line_spacing = Pt(20)
+        q.paragraph_format.left_indent = Cm(0); q.paragraph_format.right_indent = Cm(0)
+        _font(q.add_run(str(rating)), 14, 'FFFFFF', True, t.heading_east_asia)
+        if change: _font(q.add_run(f'（{change}）'), 10, 'FFFFFF', True, t.heading_east_asia)
+        rows = []
+        if target_price is not None: rows.append((f'目标价（{horizon}）', f'{target_price:,.2f}{unit}'))
+        if price is not None: rows.append(('当前股价', f'{price:,.2f}{unit}'))
+        if target_price is not None and price: rows.append(('预期回报', f'{target_price / price - 1:+.1%}'))
+        for label, value in rows:
+            r2 = table.add_row(); c = r2.cells[0]; self._cell(c, w, 5, 1.5)
+            q = c.paragraphs[0]; q.paragraph_format.line_spacing = Pt(13)
+            q.paragraph_format.left_indent = Cm(0); q.paragraph_format.right_indent = Cm(0)
+            q.paragraph_format.tab_stops.add_tab_stop(Cm(w - .25), WD_TAB_ALIGNMENT.RIGHT)
+            _font(q.add_run(label), 8.6, t.muted, False, t.body_east_asia)
+            _font(q.add_run('\t' + value), 9.2, t.navy, True, t.body_east_asia)
+        self._cell_rule(table.rows[-1].cells[0], 'bottom', t.rule, 4)
+        gap = self.doc.add_paragraph(); gap.paragraph_format.line_spacing = Pt(4); gap.paragraph_format.space_after = Pt(2)
+        return table
+
+    def rating_definitions(self, stock_rows, industry_rows=None, intro=None, title='投资评级说明'):
+        """Rating-system table (类别｜评级｜定义) for the closing pages."""
+        t = self.theme
+        h = self.doc.add_paragraph(); h.paragraph_format.space_before = Pt(14)
+        h.paragraph_format.space_after = Pt(4); h.paragraph_format.keep_with_next = True
+        _border(h, 'bottom', t.navy, 6, 3)
+        _font(h.add_run(title), 9.5, t.navy, True, t.heading_east_asia)
+        if intro:
+            q = self.doc.add_paragraph(); q.paragraph_format.line_spacing = Pt(12); q.paragraph_format.space_after = Pt(3)
+            _font(q.add_run(intro), 8, t.muted, False, t.body_east_asia)
+        rows = [['股票评级', a, b] for a, b in stock_rows] + [['行业评级', a, b] for a, b in (industry_rows or [])]
+        return self.table(['类别', '评级', '定义'], rows, widths_cm=[2.4, 3.2, self.current_width_cm - 5.6],
+                          size=8, align=['left', 'left', 'left'], keep_together=True)
+
+    # ---------- two-column financial pages ----------
+    def begin_columns(self, title=None, gap_cm=.5):
+        """Start a new page in two equal columns (财务报表和主要财务比率)."""
+        col = (self.full_width_cm - gap_cm) / 2
+        if title:
+            self._columns([self.full_width_cm], 0, WD_SECTION_START.NEW_PAGE)
+            h = self.doc.add_paragraph(); h.paragraph_format.space_after = Pt(6)
+            h.paragraph_format.line_spacing = Pt(20); _border(h, 'bottom', self.theme.navy, 10, 3)
+            _font(h.add_run(title), 13, self.theme.navy, True, self.theme.heading_east_asia)
+            self._columns([col, col], gap_cm, WD_SECTION_START.CONTINUOUS)
+        else:
+            self._columns([col, col], gap_cm, WD_SECTION_START.NEW_PAGE)
+        self.current_width_cm = col
+
+    def next_column(self):
+        p = self.doc.add_paragraph(); p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing = Pt(1); p.add_run().add_break(WD_BREAK.COLUMN)
+
+    def end_columns(self, new_page=False):
+        self._columns([self.full_width_cm], 0, WD_SECTION_START.NEW_PAGE if new_page else WD_SECTION_START.CONTINUOUS)
+        self.current_width_cm = self.full_width_cm
+
+    def mini_heading(self, text, unit=None):
+        """Compact table label used inside the financial pages."""
+        t = self.theme; p = self.doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(5); p.paragraph_format.space_after = Pt(1)
+        p.paragraph_format.line_spacing = Pt(13); p.paragraph_format.keep_with_next = True
+        p.paragraph_format.left_indent = Cm(0)
+        _font(p.add_run(text), 8.6, t.navy, True, t.heading_east_asia)
+        if unit: _font(p.add_run(f'（{unit}）'), 7.6, t.muted, False, t.body_east_asia)
+        return p
+
     def disclosure(self, text, title='重要声明'):
         """Closing statement block in small muted type, set off by a hairline."""
         h = self.doc.add_paragraph(); h.paragraph_format.space_before = Pt(18)
