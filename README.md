@@ -12,7 +12,7 @@
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
 [![Agent](https://img.shields.io/badge/agent-SKILL.md%20compatible-6B5B95?style=flat-square)](#quick-start)
 
-[效果预览](#preview) · [一句话安装](#quick-start) · [核心能力](#features) · [风格与品牌](#design) · [使用文档](#docs) · [更新记录](CHANGELOG.md)
+[效果预览](#preview) · [快速开始](#quick-start) · [核心能力](#features) · [风格与品牌](#design) · [使用文档](#docs) · [更新记录](CHANGELOG.md)
 
 </div>
 
@@ -42,39 +42,23 @@
 <a id="quick-start"></a>
 ## 快速开始
 
-### 一句话安装（推荐，无需任何编程基础）
+### 1. 安装
 
-打开 Claude Code、Codex 等任意 Agent，把下面这段话原样复制发送，Agent 会自动完成下载、安装和环境准备：
-
-```text
-请帮我安装并配置这个研报技能：https://github.com/Ruoyu-Tianyi/equity-research-skill 。把仓库里的 skills/ah-equity-research 文件夹安装到你的技能目录，用 pip 安装 requirements.txt 里的依赖，检查电脑上是否有楷体和 Times New Roman 字体以及 Microsoft Word；缺什么就用简单的话告诉我怎么补。全部完成后告诉我"安装成功"，并说明下一步我需要准备哪些材料。
-```
-
-安装好以后，再发一句话就能开始写报告：
+将以下指令发送给 Claude Code、Codex 或其他支持 `SKILL.md` 的 Agent，由其完成安装与环境检查：
 
 ```text
-用 ah-equity-research 技能，帮我写一份[公司名称]（[股票代码]）的中文深度研报，估值模型是[把 Excel 文件拖进对话框]。
+安装 https://github.com/Ruoyu-Tianyi/equity-research-skill 中的 skills/ah-equity-research 到你的技能目录，安装 requirements.txt 依赖，并检查楷体、Times New Roman 与 Microsoft Word 是否可用；完成后列出缺失项及补充方法。
 ```
 
-> 遇到任何报错，直接把报错内容发给 Agent，说"帮我解决"即可。
-
-### 1. 手动安装 Skill
-
-本项目采用开放的 `SKILL.md` 格式：一个文件夹包含工作流说明、参考规范和脚本，任何能读取文件、执行本地 Python 脚本的 Agent 都可以使用。
+<details>
+<summary>手动安装与运行环境</summary>
 
 | Agent | 安装方式 |
 | --- | --- |
-| **Claude Code** | 把 `skills/ah-equity-research` 复制到 `~/.claude/skills/`（个人）或项目的 `.claude/skills/`；或运行 `npx skills add Ruoyu-Tianyi/equity-research-skill --skill ah-equity-research` |
-| **Claude 应用（含桌面端）** | 将 `skills/ah-equity-research` 打包为 zip，在设置的技能页面上传 |
-| **Codex** | 发送：`使用 $skill-installer，从 https://github.com/Ruoyu-Tianyi/equity-research-skill 安装 ah-equity-research，技能路径 skills/ah-equity-research`；或复制到 `~/.codex/skills/` |
-| **其他 Agent**（Cursor、Gemini CLI、OpenClaw 等） | 复制到该 Agent 的技能目录；不支持技能目录时，在对话开头让 Agent 读取 `SKILL.md` 并按其指引执行 |
-
-安装 Skill 不会自动安装 Python 依赖、字体或 Microsoft Word；首次使用请按下方“运行环境”完成准备。
-
-<details>
-<summary>运行环境与手动安装</summary>
-
-下载或克隆仓库，把完整的 `skills/ah-equity-research` 文件夹复制到所用 Agent 的技能目录，保留其中的脚本、参考文档和资源文件。
+| Claude Code | 复制 `skills/ah-equity-research` 至 `~/.claude/skills/` 或项目 `.claude/skills/` |
+| Claude 应用 | 将该文件夹打包为 zip，在设置的技能页面上传 |
+| Codex | 复制至 `~/.codex/skills/`，或通过 `$skill-installer` 安装 |
+| 其他 Agent | 复制至其技能目录；不支持时让 Agent 读取 `SKILL.md` 执行 |
 
 ```bash
 git clone https://github.com/Ruoyu-Tianyi/equity-research-skill.git
@@ -84,44 +68,28 @@ python -m pip install -r requirements.txt
 
 | 环境 | 要求 |
 | --- | --- |
-| Agent | Claude Code、Codex 或其他支持 SKILL.md 的 Agent；需能读取模型、执行本地脚本及访问所用资料 |
-| Python | 3.10+；依赖 `openpyxl`、`python-docx`、`Pillow`、`matplotlib`；取A股行情可选 `tushare` |
-| 字体 | KaiTi（楷体）与 Times New Roman；字体文件不随项目分发，放在工作区 `fonts/`（simkai.ttf、times*.ttf）即可自动发现 |
-| 行情数据（可选） | Tushare Pro 账号；凭证放环境变量 `TUSHARE_TOKEN` 或本机 `config.local.json` |
-| 内置 PDF 导出 | Windows + Microsoft Word 桌面版 |
-| 其他导出环境 | 另接可用的文档导出引擎，并重新核验字体、字段和分页 |
+| Python | 3.10+；`openpyxl`、`python-docx`、`Pillow`、`matplotlib`，行情可选 `tushare` |
+| 字体 | 楷体与 Times New Roman；可放入工作区 `fonts/` 自动识别 |
+| 行情数据（可选） | Tushare Pro，凭证置于环境变量 `TUSHARE_TOKEN` 或本机 `config.local.json` |
+| PDF 导出 | Windows + Microsoft Word；其他平台需另配导出引擎 |
 
 </details>
 
-### 2. 提供模型与研究时点
-
-准备 Excel 工作簿、公司及证券代码、研究截止日。行业资料、公司公告、金融终端导出或已授权的数据接口都可以作为补充输入。
-
-将下面的内容发给你的 Agent，替换方括号即可开始：
+### 2. 生成报告
 
 ```text
-使用 ah-equity-research 技能，生成一份中文公司深度研报。
-
-公司与证券代码：[公司名称、代码、股份类别]
-估值模型：[Excel 工作簿路径或附件]
-研究截止日：[YYYY-MM-DD，或沿用模型原研究时点]
-补充资料：[公告、行业资料、终端导出或可用接口]
-
-围绕行业格局、公司竞争力和投资逻辑展开分析，
-沿用原模型的预测与估值方法，将模型数据融入盈利与估值论证。
-采用默认机构研究风格；中文楷体，英文及数字 Times New Roman。
-重要经营与财务数据、有价值的补充图表整理到附录。
-
-交付可编辑 Word、同版 PDF 和独立底稿。
+使用 ah-equity-research 技能，为[公司名称]（[证券代码]）撰写中文深度研究报告。
+估值模型：[Excel 文件]；研究截止日：[YYYY-MM-DD]；补充资料：[可选]
 ```
 
-### 3. 审阅并迭代
+默认交付可编辑 Word、同版 PDF 与研究底稿，沿用原模型的预测与估值方法。
 
-围绕投资论点、模型解释与最终页面提出修改，Skill 会延续已确定的研究时点、字体、配色和品牌偏好。例如：
+### 3. 审阅迭代
+
+直接提出修改意见即可，研究时点、版式与品牌设置保持不变。例如：
 
 ```text
-强化公司相对同行的成本优势，结合模型解释其对利润和估值的影响。
-正文保留关键图表，把详细经营假设与完整财务预测放入附录。
+强化成本优势的论证，并结合模型说明其对利润与估值的影响；详细假设移至附录。
 ```
 
 <a id="features"></a>
