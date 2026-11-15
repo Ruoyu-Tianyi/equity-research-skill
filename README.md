@@ -4,12 +4,13 @@
 
 ### 从 Excel 估值模型到专业公司深度研报
 
-面向 **A 股与港股** 的中文研究工作流 · **Codex Agent Skill**
+面向 **A 股与港股** 的中文研究工作流 · **通用 Agent Skill**（Claude Code · Codex · 其他支持 SKILL.md 的 Agent）
 
 [![Version](https://img.shields.io/badge/version-2.7.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](requirements.txt)
 [![Output](https://img.shields.io/badge/output-DOCX%20%2B%20PDF-4C687B?style=flat-square)](#preview)
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
+[![Agent](https://img.shields.io/badge/agent-SKILL.md%20compatible-6B5B95?style=flat-square)](#quick-start)
 
 [效果预览](#preview) · [快速开始](#quick-start) · [核心能力](#features) · [风格与品牌](#design) · [使用文档](#docs) · [更新记录](CHANGELOG.md)
 
@@ -43,20 +44,21 @@
 
 ### 1. 安装 Skill
 
-在 Codex 中发送：
+本项目采用开放的 `SKILL.md` 格式：一个文件夹包含工作流说明、参考规范和脚本，任何能读取文件、执行本地 Python 脚本的 Agent 都可以使用。
 
-```text
-使用 $skill-installer，从以下仓库安装 ah-equity-research：
-https://github.com/Ruoyu-Tianyi/equity-research-skill
-技能路径：skills/ah-equity-research
-```
+| Agent | 安装方式 |
+| --- | --- |
+| **Claude Code** | 把 `skills/ah-equity-research` 复制到 `~/.claude/skills/`（个人）或项目的 `.claude/skills/`；或运行 `npx skills add Ruoyu-Tianyi/equity-research-skill --skill ah-equity-research` |
+| **Claude 应用（含桌面端）** | 将 `skills/ah-equity-research` 打包为 zip，在设置的技能页面上传 |
+| **Codex** | 发送：`使用 $skill-installer，从 https://github.com/Ruoyu-Tianyi/equity-research-skill 安装 ah-equity-research，技能路径 skills/ah-equity-research`；或复制到 `~/.codex/skills/` |
+| **其他 Agent**（Cursor、Gemini CLI、OpenClaw 等） | 复制到该 Agent 的技能目录；不支持技能目录时，在对话开头让 Agent 读取 `SKILL.md` 并按其指引执行 |
 
 安装 Skill 不会自动安装 Python 依赖、字体或 Microsoft Word；首次使用请按下方“运行环境”完成准备。
 
 <details>
 <summary>运行环境与手动安装</summary>
 
-下载或克隆仓库，把完整的 `skills/ah-equity-research` 文件夹复制到 `$CODEX_HOME/skills/`；默认位置为 `~/.codex/skills/ah-equity-research`。保留其中的脚本、参考文档和资源文件。
+下载或克隆仓库，把完整的 `skills/ah-equity-research` 文件夹复制到所用 Agent 的技能目录，保留其中的脚本、参考文档和资源文件。
 
 ```bash
 git clone https://github.com/Ruoyu-Tianyi/equity-research-skill.git
@@ -66,7 +68,7 @@ python -m pip install -r requirements.txt
 
 | 环境 | 要求 |
 | --- | --- |
-| Agent | Codex；需能读取模型、执行本地脚本及访问所用资料 |
+| Agent | Claude Code、Codex 或其他支持 SKILL.md 的 Agent；需能读取模型、执行本地脚本及访问所用资料 |
 | Python | 3.10+；依赖 `openpyxl`、`python-docx`、`Pillow`、`matplotlib`；取A股行情可选 `tushare` |
 | 字体 | KaiTi（楷体）与 Times New Roman；字体文件不随项目分发，放在工作区 `fonts/`（simkai.ttf、times*.ttf）即可自动发现 |
 | 行情数据（可选） | Tushare Pro 账号；凭证放环境变量 `TUSHARE_TOKEN` 或本机 `config.local.json` |
@@ -79,10 +81,10 @@ python -m pip install -r requirements.txt
 
 准备 Excel 工作簿、公司及证券代码、研究截止日。行业资料、公司公告、金融终端导出或已授权的数据接口都可以作为补充输入。
 
-将下面的内容复制到 Codex，替换方括号即可开始：
+将下面的内容发给你的 Agent，替换方括号即可开始：
 
 ```text
-使用 $ah-equity-research，生成一份中文公司深度研报。
+使用 ah-equity-research 技能，生成一份中文公司深度研报。
 
 公司与证券代码：[公司名称、代码、股份类别]
 估值模型：[Excel 工作簿路径或附件]
@@ -238,7 +240,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "skills/ah-equity-research/s
 ```text
 skills/ah-equity-research/
 ├── SKILL.md                 # 研究工作流入口
-├── agents/                  # Codex 技能元数据
+├── agents/                  # Agent 平台元数据（如 Codex 的 openai.yaml）
 ├── assets/                  # 报告蓝图
 ├── references/              # 研究、估值、写作与设计规范
 └── scripts/
@@ -261,7 +263,7 @@ skills/ah-equity-research/
 ## 常见问题
 
 **这是可以直接运行的自动研报程序吗？**  
-这是供 Codex 执行的 Agent Skill，包含研究工作流、写作规范与排版工具。Agent 需要结合实际模型和资料完成研究、核对与导出；辅助脚本负责各自的具体环节。
+这是通用的 Agent Skill，可由 Claude Code、Codex 等 Agent 执行，包含研究工作流、写作规范与排版工具。Agent 需要结合实际模型和资料完成研究、核对与导出；辅助脚本负责各自的具体环节。
 
 **需要金融数据 API 吗？**  
 可以使用已有 CSV/XLSX 导出、公告与财报；有 Tushare Pro 账号时，`fetch_market_data.py` 可自动取首页股价图与涨跌幅所需行情。若需要金融终端或付费接口，使用你已有的账号与权限；仓库不附带数据凭证或通用接入承诺。
@@ -274,6 +276,13 @@ skills/ah-equity-research/
 
 **仓库里有真实公司的模型和报告吗？**  
 公开内容为通用 Skill、工具与合成样式示例。实际模型、公司研究底稿、API 凭证和本机品牌配置不随仓库发布。
+
+## 发展路线
+
+- **研究质量**：吸收优秀开源项目的做法，强化正文的论证逻辑与中文表达。
+- **版式设计**：更专业、更具设计感的排版，提供更多可选版式。
+- **分步流程**：研究底稿 → 模型 → 估值 → 图表 → 成文分步执行，每步设检查点。
+- **自动化估值建模**（远期）：通过公开信息或用户提供的 API 取数，自动搭建估值模型；关键假设可由用户给定，也可由 AI 提出并标注。
 
 ## 参与改进
 
