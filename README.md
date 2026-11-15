@@ -12,7 +12,7 @@
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
 [![Agent](https://img.shields.io/badge/agent-SKILL.md%20compatible-6B5B95?style=flat-square)](#quick-start)
 
-[效果预览](#preview) · [快速开始](#quick-start) · [核心能力](#features) · [风格与品牌](#design) · [使用文档](#docs) · [更新记录](CHANGELOG.md)
+[效果预览](#preview) · [一句话安装](#quick-start) · [核心能力](#features) · [风格与品牌](#design) · [使用文档](#docs) · [更新记录](CHANGELOG.md)
 
 </div>
 
@@ -42,7 +42,23 @@
 <a id="quick-start"></a>
 ## 快速开始
 
-### 1. 安装 Skill
+### 一句话安装（推荐，无需任何编程基础）
+
+打开 Claude Code、Codex 等任意 Agent，把下面这段话原样复制发送，Agent 会自动完成下载、安装和环境准备：
+
+```text
+请帮我安装并配置这个研报技能：https://github.com/Ruoyu-Tianyi/equity-research-skill 。把仓库里的 skills/ah-equity-research 文件夹安装到你的技能目录，用 pip 安装 requirements.txt 里的依赖，检查电脑上是否有楷体和 Times New Roman 字体以及 Microsoft Word；缺什么就用简单的话告诉我怎么补。全部完成后告诉我"安装成功"，并说明下一步我需要准备哪些材料。
+```
+
+安装好以后，再发一句话就能开始写报告：
+
+```text
+用 ah-equity-research 技能，帮我写一份[公司名称]（[股票代码]）的中文深度研报，估值模型是[把 Excel 文件拖进对话框]。
+```
+
+> 遇到任何报错，直接把报错内容发给 Agent，说"帮我解决"即可。
+
+### 1. 手动安装 Skill
 
 本项目采用开放的 `SKILL.md` 格式：一个文件夹包含工作流说明、参考规范和脚本，任何能读取文件、执行本地 Python 脚本的 Agent 都可以使用。
 
