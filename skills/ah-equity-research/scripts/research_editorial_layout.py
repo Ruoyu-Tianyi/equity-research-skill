@@ -134,6 +134,21 @@ class Theme:
                        zebra='FAFBFC', body_after_pt=4)
 
 
+
+class _CellTarget:
+    """Routes the layout's document writes into a table cell (figures-left layout)."""
+    def __init__(self, cell, doc): self._cell, self._doc = cell, doc
+    def add_paragraph(self, text='', style=None): return self._cell.add_paragraph(text, style)
+    def add_table(self, rows=0, cols=1, style=None):
+        t = self._cell.add_table(rows, cols)
+        if style: t.style = style
+        return t
+    def add_page_break(self): return None          # page breaks are not meaningful inside a column
+    @property
+    def paragraphs(self): return self._cell.paragraphs
+    def __getattr__(self, name): return getattr(self._doc, name)
+
+
 def _element(tag, **attrs):
     e = OxmlElement('w:' + tag)
     for key, value in attrs.items():
@@ -918,6 +933,34 @@ class ResearchEditorialLayout:
             self.manifest['figures'].append({'number':self.figure_count,'caption':captions[k],'path':str(paths[k]),'layout':'pair','internal_note':notes[k] if notes else None})
         p = self.doc.add_paragraph(); p.paragraph_format.line_spacing = Pt(1); p.paragraph_format.space_after = Pt(2)
         return nums
+
+    # ---- figures-left layout: charts in a left column, analysis text on the right ----
+    SIDE_LEFT_CM = 8.33          # native half-width chart (8.085 cm) plus picture insets
+
+    def begin_side(self, left_cm=None, gap_cm=.5):
+        if getattr(self, '_side', None): raise ValueError('Close the current side layout first.')
+        left = left_cm or self.SIDE_LEFT_CM; right = self.full_width_cm - left - gap_cm
+        if right < 6: raise ValueError('Text column would be narrower than 6 cm.')
+        table = self._table_shell([left, gap_cm, right]); row = table.add_row()
+        for ci, w in enumerate((left, gap_cm, right)):
+            self._cell(row.cells[ci], w, 0, 0)
+            row.cells[ci].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+        self._side = {'doc': self.doc, 'cells': (row.cells[0], row.cells[2]), 'widths': (left, right)}
+        return table
+
+    def side(self, which):
+        k = {'left': 0, 'right': 1}[which]
+        self.doc = _CellTarget(self._side['cells'][k], self._side['doc'])
+        self.current_width_cm = self._side['widths'][k]
+
+    def end_side(self):
+        side = self._side; self._side = None
+        self.doc = side['doc']; self.current_width_cm = self.full_width_cm
+        for cell in side['cells']:
+            ps = cell.paragraphs
+            if len(cell._tc.xpath('./w:p | ./w:tbl')) > 1 and ps and not ps[0].text.strip() and not ps[0]._p.xpath('.//w:drawing'):
+                cell._tc.remove(ps[0]._p)
+        p = self.doc.add_paragraph(); p.paragraph_format.line_spacing = Pt(1); p.paragraph_format.space_after = Pt(4)
 
     def page_break(self):
         """Use for an explicit part break, never after every small subsection."""

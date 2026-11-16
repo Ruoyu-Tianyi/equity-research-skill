@@ -2,7 +2,7 @@
 name: ah-equity-research
 description: 结合独立行业与公司研究、市场数据和用户已有 Excel 估值模型，生成 A股及港股中文公司深度研报，解释竞争格局、公司优势、预期差、投资逻辑及盈利估值，交付专业图表、可编辑 Word 与 PDF。适用于已有模型转公司深度、更新研究和改善研报呈现；不将报告替换为模型审计，也不默认从零重建模型。
 metadata:
-  version: "2.9.0"
+  version: "2.10.0"
 ---
 
 # A/H 股公司深度研究
@@ -24,7 +24,7 @@ metadata:
 2. **S2 研究底稿**（`brief`）——读 [data-sources.md](references/data-sources.md)、[research-brief.md](references/research-brief.md) 与 [research-and-valuation.md](references/research-and-valuation.md)。固定截止日、股份类别、币种与会计期间，独立收集行业与公司证据：先运行`scripts/probe_data_sources.py`记录可用接口与网站；A股行情用`scripts/fetch_market_data.py`经Tushare取截止日前逐日收盘价与基准指数（凭证放环境变量`TUSHARE_TOKEN`或`config.local.json`，不写入成稿与发布包）；证据登记到`sources.json`，用`scripts/source_ledger.py`检查截止日后信息。写出`research-brief.md`：核心问题、现价隐含条件与预期差、3–5张论点卡、估值锚、结论式大纲、证据缺口、自检五问。现价反推与价值拆分可用`scripts/reverse_valuation.py`。
 3. **S3 估值**（`valuation`）——读 [valuation-methods.md](references/valuation-methods.md)。写`valuation-inputs.json`，用`scripts/valuation_methods.py`计算各方法区间与目标价合理性检查，生成`valuation.json`（可比公司与历史倍数可用`scripts/fetch_peer_multiples.py`取数）：以已有模型的方法为**主方法**给出12个月目标价并写明理由，模型之后的事项列为调整项；用1–3个独立方法**交叉验证**，偏离目标价超过15%须解释；不对各方法加权。评级由目标价推出（[评级体系](references/rating-system.md)）。
 4. **S4 图表**（`charts`）——读 [report-design.md](references/report-design.md) 与 [visual-production.md](references/visual-production.md)。先列图表清单，每图对应一张论点卡；数据图用`scripts/chart_templates.py`由真实数据生成，不用图像生成工具；估值章节放`valuation_summary`（足球场图与方法表）。
-5. **S5 成文**（`draft`）——读 [writing-style.md](references/writing-style.md)、[terminology.md](references/terminology.md)、[报告蓝图](assets/report-blueprint.md)、[report-spec.md](references/report-spec.md)、[style-presets.md](references/style-presets.md)。全文写成`spec.json`：章节标题与论点只来自底稿；Excel表格用`model_table`按年份表头取数；阈值写入`thresholds`；附录按经营驱动、财务预测、估值明细、研究补充分组，文末用`fin_pages`生成财务报表整页。`scripts/build_report.py spec.json --out …`先做格式与行文检查再装配Word，检查未过不生成；不为单个公司另写装配脚本。Windows+Word时`scripts/export_word.ps1`更新字段并导出PDF；无Word时LibreOffice仅作预览。默认楷体＋Times New Roman、`institutional`风格；字体文件放工作区`fonts/`，缺字体只能出`--draft`草稿。
+5. **S5 成文**（`draft`）——读 [writing-style.md](references/writing-style.md)、[terminology.md](references/terminology.md)、[报告蓝图](assets/report-blueprint.md)、[report-spec.md](references/report-spec.md)、[style-presets.md](references/style-presets.md)。全文写成`spec.json`：章节标题与论点只来自底稿；Excel表格用`model_table`按年份表头取数；阈值写入`thresholds`；附录按经营驱动、财务预测、估值明细、研究补充分组，文末用`fin_pages`生成财务报表整页。`scripts/build_report.py spec.json --out …`先做格式与行文检查再装配Word，检查未过不生成；不为单个公司另写装配脚本。Windows+Word时`scripts/export_word.ps1`更新字段并导出PDF；无Word时LibreOffice仅作预览。默认楷体＋Times New Roman、`institutional`风格、通栏版式（可选`layout.mode: figures_left`图文分栏，图表在左、文字在右）；字体文件放工作区`fonts/`，缺字体只能出`--draft`草稿。
 6. **S6 验收**（`review`）——读 [quality-gates.md](references/quality-gates.md) 与 [review-rubric.md](references/review-rubric.md)。数字、证据、视觉分别验收，最终PDF逐页查看；研究质量由**未参与写作的独立评审**按量表打分，写入`quality-review.md`并绑定最终DOCX/PDF哈希；未达门槛或触发否决项则回到对应阶段修订。无法渲染时交付“排版待验稿”，不声称已验证。
 
 ## 交付

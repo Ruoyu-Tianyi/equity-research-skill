@@ -574,6 +574,8 @@ def _chart(item, figdir: Path, key: str):
     args = dict(c.get("args", {}))
     if "wide" in item and c["template"] not in ("price_sparkline", "price_area"):
         args["wide"] = item["wide"]
+    if item.get("_side") and c["template"] not in ("price_sparkline", "price_area"):
+        args["wide"] = False      # the left column holds a native half-width chart
     audit = fn(str(figdir / key), **args)
     return Path(audit["png"]), audit
 
@@ -700,65 +702,111 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
                 _font(q.add_run(f"{text}\t{page}"), 10.5 if level == 1 else 9.5, t.navy if level == 1 else t.muted, level == 1, t.heading_east_asia)
         if spec.get("reading_note"): r.paragraph(spec["reading_note"], size=8, color=t.muted)
     # ---- body ----
-    chapter = 0; first = True
+    state = {"chapter": 0, "first": True}
+
+    def emit(i, b):
+            ty = b["type"]
+            if ty == "h1":
+                if b.get("appendix"):
+                    r.begin_appendix(b["text"], page_break=b.get("page_break", True))
+                else:
+                    state["chapter"] += 1
+                    h = r.chapter(b["text"], number=b.get("number", state["chapter"]))
+                    if state["first"] or b.get("page_break"): h.paragraph_format.page_break_before = True
+                state["first"] = False
+            elif ty == "h2": r.subheading(b["text"])
+            elif ty == "h3": r.h3(b["text"])
+            elif ty == "p":
+                r.paragraph(b["text"], lead=b.get("lead", _lead(b["text"]) if b.get("auto_lead", True) else None))
+            elif ty == "table":
+                r.table(b["headers"], _table_rows(b), caption=b.get("caption"), source=b.get("source"),
+                        widths_cm=b.get("widths"), size=b.get("size", 8.8),
+                        subtotal_rows=tuple(b.get("subtotal_rows", ())), keep_together=b.get("keep_together"))
+            elif ty == "figure":
+                path = _resolve_image(b, base, figdir, b.get("id", f"fig{i}"), audits)
+                width = audits[-1].get("target_width_cm") if b.get("chart") and audits else None
+                r.figure(path, b["caption"], source=b["source"], width_cm=width, max_height_cm=b.get("max_height_cm"))
+            elif ty == "figure_pair":
+                paths = [_resolve_image(it, base, figdir, it.get("id", f"fig{i}_{k}"), audits) for k, it in enumerate(b["items"])]
+                r.figure_pair(paths, [it["caption"] for it in b["items"]], [it["source"] for it in b["items"]])
+            elif ty == "fin_pages":
+                r.begin_columns(b.get("title", "附表：财务报表和主要财务比率"))
+                shared = {}
+                for side in ("left", "right"):
+                    if side == "right": r.next_column()
+                    for sec in b.get(side, []):
+                        tb = resolve_fin_section(sec, base, meta.get("model"), b["years"], b.get("price"), b.get("shares"), shared)
+                        r.mini_heading(tb["title"], tb.get("unit"))
+                        n = len(tb["headers"]) - 1; lw = b.get("label_width_cm", 2.5)
+                        cw = (r.current_width_cm - lw) / n
+                        r.table(tb["headers"], _table_rows(tb), widths_cm=[lw] + [cw] * n, size=b.get("size", 7.4),
+                                subtotal_rows=tuple(tb["subtotal_rows"]), keep_together=True)
+                r.end_columns()
+                if b.get("source"): r.source(b["source"])
+            elif ty == "valuation_summary":
+                v = load_valuation(spec, base)
+                part = b.get("_part", "all")
+                item = {"wide": True, "_side": b.get("_side"), "chart": {"template": "football_field", "args": {
+                    "rows": football_rows(v), "price": cover.get("valuation", {}).get("price"),
+                    "target": v["primary"]["target_price"], "unit": b.get("unit", "元/股"), "digits": b.get("digits", 0)}}}
+                if part in ("all", "figure"):
+                    path = _resolve_image(item, base, figdir, b.get("id", "valuation_football_field"), audits)
+                    r.figure(path, b.get("caption", "估值方法对照：主方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
+                             width_cm=audits[-1].get("target_width_cm"))
+                if part == "figure": return
+                if b.get("table", True):
+                    hd, rows = valuation_table(v, b.get("digits", 0))
+                    r.table(hd, rows, caption=b.get("table_caption", "估值方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
+                            widths_cm=b.get("widths", [3.2, 1.8, 4.0, 8.3]), size=b.get("size", 8.4), keep_together=False)
+                if b.get("sanity", True) and v.get("sanity"):
+                    rows = [[x["item"], x.get("display", ""), x.get("compare", "—")] for x in v["sanity"]]
+                    r.table(["合理性检查", "结果", "参照"], rows, caption=b.get("sanity_caption", "目标价合理性检查"),
+                            source=b.get("source", "估值模型、团队分析"), widths_cm=[6.0, 3.4, 7.9], size=8.4, keep_together=True)
+            elif ty == "page_break": r.page_break()
+            elif ty == "end_appendix": r.end_appendix()
+            else: raise ValueError(f"未知 block 类型：{ty}")
+
+    layout = spec.get("layout") or {}
+    side_mode = layout.get("mode") == "figures_left"
+    SIDE_FIGS, BREAKS = ("figure", "figure_pair"), ("h1", "h2", "h3", "page_break", "fin_pages", "end_appendix")
+
+    def flush(group):
+        """figures_left: charts of one subsection go to the left column, its paragraphs to the right;
+        full-width tables follow the column block; a narrow table can opt in with "column": "left"."""
+        is_left = lambda b: b["type"] in SIDE_FIGS + ("valuation_summary",) or (b["type"] == "table" and b.get("column") == "left")
+        if not any(is_left(b) for _, b in group):
+            for i, b in group: emit(i, b)
+            return
+        r.begin_side(layout.get("left_cm"), layout.get("gap_cm", .5))
+        r.side("left")
+        for i, b in group:
+            if not is_left(b): continue
+            if b["type"] == "figure_pair":
+                for k, it in enumerate(b["items"]):
+                    emit(i, {**it, "type": "figure", "id": it.get("id", f"fig{i}_{k}"), "_side": True})
+            elif b["type"] == "valuation_summary":
+                emit(i, {**b, "_side": True, "_part": "figure"})
+            else:
+                emit(i, {**b, "_side": True})
+        r.side("right")
+        for i, b in group:
+            if b["type"] == "p": emit(i, b)
+        r.end_side()
+        for i, b in group:
+            if b["type"] == "valuation_summary": emit(i, {**b, "_part": "tables"})
+            elif not is_left(b) and b["type"] != "p": emit(i, b)
+
+    group, in_appendix = [], False
     for i, b in enumerate(spec.get("body", [])):
         ty = b["type"]
-        if ty == "h1":
-            if b.get("appendix"):
-                r.begin_appendix(b["text"], page_break=b.get("page_break", True))
-            else:
-                chapter += 1
-                h = r.chapter(b["text"], number=b.get("number", chapter))
-                if first or b.get("page_break"): h.paragraph_format.page_break_before = True
-            first = False
-        elif ty == "h2": r.subheading(b["text"])
-        elif ty == "h3": r.h3(b["text"])
-        elif ty == "p":
-            r.paragraph(b["text"], lead=b.get("lead", _lead(b["text"]) if b.get("auto_lead", True) else None))
-        elif ty == "table":
-            r.table(b["headers"], _table_rows(b), caption=b.get("caption"), source=b.get("source"),
-                    widths_cm=b.get("widths"), size=b.get("size", 8.8),
-                    subtotal_rows=tuple(b.get("subtotal_rows", ())), keep_together=b.get("keep_together"))
-        elif ty == "figure":
-            path = _resolve_image(b, base, figdir, b.get("id", f"fig{i}"), audits)
-            width = audits[-1].get("target_width_cm") if b.get("chart") and audits else None
-            r.figure(path, b["caption"], source=b["source"], width_cm=width, max_height_cm=b.get("max_height_cm"))
-        elif ty == "figure_pair":
-            paths = [_resolve_image(it, base, figdir, it.get("id", f"fig{i}_{k}"), audits) for k, it in enumerate(b["items"])]
-            r.figure_pair(paths, [it["caption"] for it in b["items"]], [it["source"] for it in b["items"]])
-        elif ty == "fin_pages":
-            r.begin_columns(b.get("title", "附表：财务报表和主要财务比率"))
-            shared = {}
-            for side in ("left", "right"):
-                if side == "right": r.next_column()
-                for sec in b.get(side, []):
-                    tb = resolve_fin_section(sec, base, meta.get("model"), b["years"], b.get("price"), b.get("shares"), shared)
-                    r.mini_heading(tb["title"], tb.get("unit"))
-                    n = len(tb["headers"]) - 1; lw = b.get("label_width_cm", 2.5)
-                    cw = (r.current_width_cm - lw) / n
-                    r.table(tb["headers"], _table_rows(tb), widths_cm=[lw] + [cw] * n, size=b.get("size", 7.4),
-                            subtotal_rows=tuple(tb["subtotal_rows"]), keep_together=True)
-            r.end_columns()
-            if b.get("source"): r.source(b["source"])
-        elif ty == "valuation_summary":
-            v = load_valuation(spec, base)
-            item = {"wide": True, "chart": {"template": "football_field", "args": {
-                "rows": football_rows(v), "price": cover.get("valuation", {}).get("price"),
-                "target": v["primary"]["target_price"], "unit": b.get("unit", "元/股"), "digits": b.get("digits", 0)}}}
-            path = _resolve_image(item, base, figdir, b.get("id", "valuation_football_field"), audits)
-            r.figure(path, b.get("caption", "估值方法对照：主方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
-                     width_cm=audits[-1].get("target_width_cm"))
-            if b.get("table", True):
-                hd, rows = valuation_table(v, b.get("digits", 0))
-                r.table(hd, rows, caption=b.get("table_caption", "估值方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
-                        widths_cm=b.get("widths", [3.2, 1.8, 4.0, 8.3]), size=b.get("size", 8.4), keep_together=False)
-            if b.get("sanity", True) and v.get("sanity"):
-                rows = [[x["item"], x.get("display", ""), x.get("compare", "—")] for x in v["sanity"]]
-                r.table(["合理性检查", "结果", "参照"], rows, caption=b.get("sanity_caption", "目标价合理性检查"),
-                        source=b.get("source", "估值模型、团队分析"), widths_cm=[6.0, 3.4, 7.9], size=8.4, keep_together=True)
-        elif ty == "page_break": r.page_break()
-        elif ty == "end_appendix": r.end_appendix()
-        else: raise ValueError(f"未知 block 类型：{ty}")
+        if ty == "h1": in_appendix = bool(b.get("appendix"))
+        if ty == "end_appendix": in_appendix = False
+        if not side_mode or in_appendix or ty in BREAKS:
+            if group: flush(group); group = []
+            emit(i, b)
+        else:
+            group.append((i, b))
+    if group: flush(group)
     if spec.get("rating"):
         r.rating_definitions(STOCK_RATINGS, INDUSTRY_RATINGS, RATING_INTRO)
     if spec.get("disclaimer", True):
