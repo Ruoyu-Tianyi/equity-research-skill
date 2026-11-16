@@ -6,7 +6,7 @@
 
 面向 **A 股与港股** 的中文研究工作流 · **通用 Agent Skill**（Claude Code · Codex · 其他支持 SKILL.md 的 Agent）
 
-[![Version](https://img.shields.io/badge/version-2.9.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
+[![Version](https://img.shields.io/badge/version-2.10.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](requirements.txt)
 [![Output](https://img.shields.io/badge/output-DOCX%20%2B%20PDF-4C687B?style=flat-square)](#preview)
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
@@ -118,6 +118,10 @@ python -m pip install -r requirements.txt
 ### 用专业图表表达投资观点
 
 图表从模型、来源数据与逐日行情绘制，按问题选图：规模与增速用柱线组合图，结构用环形图，趋势用渐变面积图，两期对比用哑铃图，估值用价值桥、区间图与敏感性热力图。预测期柱体变浅并以虚线标注；首页股价图使用逐日连续数据并叠加基准指数。图表标题采用“图 1：对象（单位）”的中文研报格式，中文楷体、英文及数字 Times New Roman 贯穿全文。
+
+### 两种版式：通栏与左图右文
+
+默认通栏；图表多的报告可设 `"layout": {"mode": "figures_left"}`，每张图独占一行，左栏放图、右栏放引出这张图的论述，读者左看证据、右读判断。图所在的行不跨页，图题与图始终在同一页；长段落在下一行接续，避免大块留白。左栏图表按栏宽原生绘制，字号与通栏一致；表格、估值足球场图、首页与附录保持通栏。
 
 ### 让正文易读，让附录可查
 
@@ -271,17 +275,13 @@ skills/ah-equity-research/
 
 ## 发展路线
 
-已完成（v2.8）：分步流程与阶段关卡、论证与中文表达检查、主方法加交叉验证的估值框架。
+已完成：分步流程与阶段关卡、论证与中文表达检查、主方法加交叉验证的估值框架与计算器（v2.8–v2.9），通栏与左图右文两种版式（v2.10）。
 
-**中期 · 版式与定制**
+**远期**
 
-1. **版式设计**：更专业、更具设计感的排版，提供更多可选版式，包括图表在左、文字在右的图文分栏版式。
-2. **机构模板适配**：识别用户提供的模板、往期报告或品牌手册，沿用其 logo、版式规范、字体规范与配色，生成符合机构规范的报告。
-
-**远期 · 自动估值建模**
-
-3. **建模能力集成**：借鉴并集成成熟的 DCF、DDM、三表与可比公司建模方案，适配 A 股与港股口径。
-4. **自动化估值建模**：通过公开信息或用户提供的 API 取数自动搭建模型；关键假设可由用户给定，也可由 AI 提出并标注。
+1. **建模能力集成**：借鉴并集成成熟的 DCF、DDM、三表与可比公司建模方案，适配 A 股与港股口径。
+2. **自动化估值建模**：通过公开信息或用户提供的 API 取数自动搭建模型；关键假设可由用户给定，也可由 AI 提出并标注。
+3. **机构模板适配**（按需启动）：识别用户提供的模板、往期报告或品牌手册，沿用其 logo、版式规范、字体规范与配色。
 
 ## 致谢
 

@@ -134,6 +134,20 @@ class Theme:
                        zebra='FAFBFC', body_after_pt=4)
 
 
+class _CellTarget:
+    """Routes the layout's document writes into a table cell (figures_left layout)."""
+    def __init__(self, cell, doc): self._cell, self._doc = cell, doc
+    def add_paragraph(self, text='', style=None): return self._cell.add_paragraph(text, style)
+    def add_table(self, rows=0, cols=1, style=None):
+        t = self._cell.add_table(rows, cols)
+        if style: t.style = style
+        return t
+    def add_page_break(self): return None
+    @property
+    def paragraphs(self): return self._cell.paragraphs
+    def __getattr__(self, name): return getattr(self._doc, name)
+
+
 def _element(tag, **attrs):
     e = OxmlElement('w:' + tag)
     for key, value in attrs.items():
@@ -918,6 +932,46 @@ class ResearchEditorialLayout:
             self.manifest['figures'].append({'number':self.figure_count,'caption':captions[k],'path':str(paths[k]),'layout':'pair','internal_note':notes[k] if notes else None})
         p = self.doc.add_paragraph(); p.paragraph_format.line_spacing = Pt(1); p.paragraph_format.space_after = Pt(2)
         return nums
+
+    # ---- figures_left layout: one row per exhibit, chart on the left, the analysis it supports on the right ----
+    SIDE_LEFT_CM, SIDE_GAP_CM = 7.0, .6
+
+    def side_begin(self, left_cm=None, gap_cm=None):
+        left = left_cm or self.SIDE_LEFT_CM; gap = self.SIDE_GAP_CM if gap_cm is None else gap_cm
+        right = self.full_width_cm - left - gap
+        if right < 7: raise ValueError('Text column would be narrower than 7 cm.')
+        self._side = {'doc': self.doc, 'widths': (left, gap, right), 'rows': []}
+        self._side['table'] = self._table_shell([left, gap, right])
+
+    def side_row(self, cant_split=False):
+        side = self._side; self.doc = side['doc']
+        row = side['table'].add_row()
+        if cant_split: row._tr.get_or_add_trPr().append(_element('cantSplit'))
+        for ci, w in enumerate(side['widths']):
+            self._cell(row.cells[ci], w, 0, 0)
+            row.cells[ci].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+        side['rows'].append(row)
+
+    def side_cell(self, which):
+        side = self._side; row = side['rows'][-1]
+        k = {'left': 0, 'right': 2}[which]
+        self.doc = _CellTarget(row.cells[k], side['doc'])
+        self.current_width_cm = side['widths'][k]
+
+    def side_end(self):
+        side = self._side; self._side = None
+        self.doc = side['doc']; self.current_width_cm = self.full_width_cm
+        for n, row in enumerate(side['rows']):
+            for cell in row.cells:
+                ps = cell.paragraphs
+                if len(cell._tc.xpath('./w:p | ./w:tbl')) > 1 and ps and not ps[0].text.strip() and not ps[0]._p.xpath('.//w:drawing'):
+                    cell._tc.remove(ps[0]._p)
+                # Any keep-with-next inside a row makes Word keep the row with the next one, which chains
+                # rows and leaves half-empty pages; exhibits are kept whole by unsplittable rows instead.
+                for q in cell.paragraphs: q.paragraph_format.keep_with_next = False
+            for q in row.cells[2].paragraphs[-1:]:
+                q.paragraph_format.space_after = Pt(8)
+        p = self.doc.add_paragraph(); p.paragraph_format.line_spacing = Pt(1); p.paragraph_format.space_after = Pt(2)
 
     def page_break(self):
         """Use for an explicit part break, never after every small subsection."""

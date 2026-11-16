@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import math
+from contextlib import contextmanager
 
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
@@ -42,8 +43,17 @@ def draft(enabled: bool = True, theme: str = "institutional") -> None:
                              "svg.fonttype": "path"})
 
 
+@contextmanager
+def narrow_width(width_cm: float):
+    """Render half-width charts at another native width (e.g. the left column of figures_left)."""
+    global HALF
+    old, HALF = HALF, width_cm
+    try: yield
+    finally: HALF = old
+
+
 def _fig(wide: bool, height_cm: float, font_pt: float = 8.75):
-    return cs.figure(wide=wide, height_cm=height_cm, font_size_pt=font_pt)
+    return cs.figure(wide=wide, width_cm=WIDE if wide else HALF, height_cm=height_cm, font_size_pt=font_pt)
 
 
 def _save(fig, stem, wide, font_pt=8.75):
