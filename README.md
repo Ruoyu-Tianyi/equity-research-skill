@@ -6,7 +6,7 @@
 
 面向 **A 股与港股** 的中文研究工作流 · **通用 Agent Skill**（Claude Code · Codex · 其他支持 SKILL.md 的 Agent）
 
-[![Version](https://img.shields.io/badge/version-2.10.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
+[![Version](https://img.shields.io/badge/version-2.9.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](requirements.txt)
 [![Output](https://img.shields.io/badge/output-DOCX%20%2B%20PDF-4C687B?style=flat-square)](#preview)
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
@@ -118,10 +118,6 @@ python -m pip install -r requirements.txt
 ### 用专业图表表达投资观点
 
 图表从模型、来源数据与逐日行情绘制，按问题选图：规模与增速用柱线组合图，结构用环形图，趋势用渐变面积图，两期对比用哑铃图，估值用价值桥、区间图与敏感性热力图。预测期柱体变浅并以虚线标注；首页股价图使用逐日连续数据并叠加基准指数。图表标题采用“图 1：对象（单位）”的中文研报格式，中文楷体、英文及数字 Times New Roman 贯穿全文。
-
-### 两种版式：通栏或图文分栏
-
-默认通栏排版；设置 `"layout": {"mode": "figures_left"}` 即切换为图文分栏——每个小节的图表全部放在左栏、分析文字放在右栏，左栏按半宽图表原尺寸排布，宽表格在分栏后通栏显示，首页、附录与财务报表整页保持原样。
 
 ### 让正文易读，让附录可查
 
