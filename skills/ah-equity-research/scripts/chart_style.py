@@ -209,8 +209,12 @@ def figure(*, wide: bool = False, height: float = 2.6, ncols: int = 1,
 
 def style(ax, unit: str = "", *, zero: bool = True) -> None:
     colours = _figure_design(ax.figure)["chart_colors"]
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(axis="y", color=colours["grid"])
+    # editorial axes: no frame on three sides, hairline dotted grid, tick labels in muted ink
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.spines["bottom"].set_color("#8C939B"); ax.spines["bottom"].set_linewidth(.6)
+    ax.grid(axis="y", color=colours["grid"], linewidth=.5, linestyle=(0, (1, 2)))
+    ax.tick_params(axis="y", length=0, labelcolor=colours["unit"], pad=2)
+    ax.tick_params(axis="x", length=2.5, width=.5, color="#8C939B")
     ax.set_axisbelow(True)
     ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
     ax.yaxis.set_major_formatter(FuncFormatter(
@@ -223,8 +227,8 @@ def style(ax, unit: str = "", *, zero: bool = True) -> None:
 
 def legend(ax, *, ncol: int = 2, y: float = 1.25):
     return ax.legend(frameon=False, ncol=ncol, loc="upper center",
-                     bbox_to_anchor=(.5, y), handlelength=1.2,
-                     columnspacing=.8, handletextpad=.4)
+                     bbox_to_anchor=(.5, y), handlelength=.9, handleheight=.9,
+                     columnspacing=1.0, handletextpad=.4)
 
 
 def _visible_texts(fig) -> list[Text]:

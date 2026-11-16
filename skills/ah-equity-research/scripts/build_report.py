@@ -424,6 +424,12 @@ def prose_issues(spec: dict) -> list:
             add(f"body[{i}]", f"表“{b.get('caption')}”紧接上一张表：两表之间用一段判断衔接，或合并")
         if prev in ("h1", "h2", "h3"):
             add(f"body[{i}]", f"表“{b.get('caption')}”直接跟在标题后：先用一段话给出判断，表格只提供证据")
+    appendix = False
+    for i, b in enumerate(body):          # appendix groups open with a sentence on what the exhibits add
+        t = b.get("type")
+        if t == "h1": appendix = bool(b.get("appendix"))
+        if appendix and t in ("figure", "figure_pair", "table") and i and body[i - 1].get("type") in ("h1", "h2", "h3"):
+            add(f"body[{i}]", "附录分组直接以图表开头：先用一两句话说明这组图表补充了哪个论点、读者应关注什么")
     for c, (nt, np_) in counts.items():
         if nt > max(2, np_):
             add("text", f"章节“{c}…”表格{nt}张、段落{np_}段：表格多于论述，把次要表格移入附录或改写为正文/图表")

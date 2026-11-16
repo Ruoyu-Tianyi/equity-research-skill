@@ -76,6 +76,16 @@ def _forecast_mark_style() -> str:
         return "shade"
 
 
+def _thin_xticks(ax, categories, wide):
+    """Long category axes (daily dates, 10+ years on a half-width chart): label every k-th tick plus the last."""
+    n = len(categories); cap = 14 if wide else 7
+    if n <= cap: return
+    k = math.ceil(n / cap); idx = list(range(0, n, k))
+    if n - 1 - idx[-1] <= k / 2: idx[-1] = n - 1
+    else: idx.append(n - 1)
+    ax.set_xticks(idx, [categories[i] for i in idx])
+
+
 def _mark_forecast(ax, categories, forecast_from):
     """Mark the forecast period from forecast_from onward.
 
@@ -114,6 +124,8 @@ def bar(stem, categories, series: dict, *, unit="", wide=False, height_cm=5.6,
                 if n == 1: b_.set_alpha(.6)          # single series: lighter forecast bars
                 else:                                 # several series: keep each colour, mark forecasts with a fine hatch
                     b_.set_hatch("//"); b_.set_edgecolor((1, 1, 1, .42)); b_.set_linewidth(0)
+        if n == 1 and not stacked and not horizontal and _chart_opt("bar_gradient", True):
+            _gradient_bars(ax, bars, cs.PALETTE[k % 4])
         if labels and (not stacked or k == n - 1):
             tops = [b + v for b, v in zip(bottom, vals)] if stacked else vals
             for p_, t in zip(pos, tops):
@@ -148,6 +160,7 @@ def line(stem, categories, series: dict, *, unit="", wide=False, height_cm=5.6,
     ax.set_xticks(x, categories); cs.style(ax, unit, zero=zero)
     _mark_forecast(ax, list(categories), forecast_from)
     if len(series) > 1: cs.legend(ax, ncol=min(len(series), 4))
+    _thin_xticks(ax, list(categories), wide)
     return _save(fig, stem, wide)
 
 
@@ -384,6 +397,7 @@ def combo(stem, categories, bars: dict, lines: dict, *, unit="", line_unit="%", 
     h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
     ax.legend(h1 + h2, l1 + l2, frameon=False, ncol=min(4, len(l1) + len(l2)), loc="upper center",
               bbox_to_anchor=(.5, 1.25), handlelength=1.2, columnspacing=.8, handletextpad=.4)
+    _thin_xticks(ax, list(categories), wide)
     return _save(fig, stem, wide)
 
 
@@ -427,6 +441,7 @@ def area(stem, categories, series: dict, *, unit="", wide=False, height_cm=5.6, 
     _gradient_fill(ax, x, first, cs.PALETTE[1])
     _mark_forecast(ax, list(categories), forecast_from)
     if len(series) > 1: cs.legend(ax, ncol=min(len(series), 4))
+    _thin_xticks(ax, list(categories), wide)
     return _save(fig, stem, wide)
 
 
@@ -573,7 +588,75 @@ def marimekko(stem, segments: list, *, unit="", wide=True, height_cm=6.4, digits
     return _save(fig, stem, wide)
 
 
+def _tint(color, t):
+    """Mix a hex colour with white; t=0 keeps it, t=1 is white."""
+    from matplotlib.colors import to_rgb
+    r, g, b = to_rgb(color); return (r + (1 - r) * t, g + (1 - g) * t, b + (1 - b) * t)
+
+
+def _gradient_bars(ax, bars, color, light=.28):
+    """Fill each bar with a soft top-to-bottom gradient (full colour at the top), clipped to the bar."""
+    import numpy as np
+    from matplotlib.colors import LinearSegmentedColormap as LSC
+    cmap = LSC.from_list("g", [_tint(color, light), color])
+    grad = np.linspace(0, 1, 64).reshape(-1, 1)
+    for b_ in bars:
+        x0, y0 = b_.get_x(), b_.get_y(); w, h = b_.get_width(), b_.get_height()
+        if h == 0: continue
+        alpha = b_.get_alpha() or 1
+        im = ax.imshow(grad if h > 0 else grad[::-1], extent=(x0, x0 + w, y0, y0 + h), origin="lower",
+                       aspect="auto", cmap=cmap, zorder=b_.get_zorder(), alpha=alpha, interpolation="bicubic")
+        im.set_clip_path(b_); b_.set_facecolor("none")
+    ax.autoscale_view()
+
+
+def fan(stem, categories, base, low, high, *, unit="", wide=False, height_cm=5.8, digits=1,
+        names=("中性", "悲观", "乐观"), forecast_from=None, percent=False):
+    """Scenario fan: base path with a graded band to the bear and bull paths, end labels for all three."""
+    fig, ax = _fig(wide, height_cm); x = list(range(len(categories)))
+    navy, gold = cs.PALETTE[0], _chart_opt("price_mark", cs.PALETTE[3])
+    mid_lo = [(b + l) / 2 for b, l in zip(base, low)]; mid_hi = [(b + h) / 2 for b, h in zip(base, high)]
+    ax.fill_between(x, low, high, color=cs.PALETTE[1], alpha=.16, lw=0, zorder=1)
+    ax.fill_between(x, mid_lo, mid_hi, color=cs.PALETTE[1], alpha=.22, lw=0, zorder=1)
+    ax.plot(x, high, color=cs.PALETTE[1], lw=.9, ls=(0, (3, 2)), zorder=2)
+    ax.plot(x, low, color=gold, lw=.9, ls=(0, (3, 2)), zorder=2)
+    ax.plot(x, base, color=navy, lw=1.8, zorder=3)
+    suf = "%" if percent else ""
+    for ys, c, nm in ((high, cs.PALETTE[1], names[2]), (base, navy, names[0]), (low, gold, names[1])):
+        ax.plot([x[-1]], [ys[-1]], marker="o", ms=4.2, color=c, mec="white", mew=.9, zorder=4)
+        ax.text(x[-1] + .25, ys[-1], f"{nm} {_fmt(ys[-1], digits)}{suf}", va="center", fontsize=7.8, color=c,
+                fontweight="bold" if c == navy else None)
+    ax.set_xticks(x, categories); cs.style(ax, unit, zero=not percent)
+    ax.set_xlim(-.4, len(x) - .4 + 2.2)
+    _mark_forecast(ax, list(categories), forecast_from)
+    _thin_xticks(ax, list(categories), wide)
+    return _save(fig, stem, wide)
+
+
+def share_area(stem, categories, series: dict, *, wide=False, height_cm=5.8, digits=0):
+    """100% stacked area: how the mix shifts over time, shares labelled at the right edge."""
+    fig, ax = _fig(wide, height_cm); x = list(range(len(categories)))
+    tot = [sum(v[i] for v in series.values()) or 1 for i in x]
+    shares = {k: [v[i] / tot[i] * 100 for i in x] for k, v in series.items()}
+    cols = [cs.PALETTE[0], cs.PALETTE[1], cs.PALETTE[2], _chart_opt("price_mark", cs.PALETTE[3]), "#D6DEE7"]
+    ax.stackplot(x, *shares.values(), colors=cols[:len(shares)], edgecolor="white", linewidth=.8, zorder=2)
+    cum = [0] * len(x)
+    for k, (name, v) in enumerate(shares.items()):
+        mid = cum[-1] + v[-1] / 2
+        if v[-1] >= 4:
+            ax.text(x[-1] + .15, mid, f"{name} {v[-1]:.{digits}f}%", va="center", fontsize=7.6, color=cols[k % len(cols)])
+        if v[0] >= 8:
+            ax.text(x[0] + .1, cum[0] + v[0] / 2, f"{v[0]:.{digits}f}%", va="center", fontsize=7.4,
+                    color="white" if k < 2 else "#1E2328")
+        cum = [c + y for c, y in zip(cum, v)]
+    ax.set_xticks(x, categories); cs.style(ax, "%"); ax.grid(False)
+    ax.set_ylim(0, 100); ax.set_xlim(0, len(x) - 1 + 2.6)
+    _thin_xticks(ax, list(categories), wide)
+    return _save(fig, stem, wide)
+
+
 TEMPLATES = {"bar": bar, "line": line, "waterfall": waterfall, "heatmap": heatmap,
              "football_field": football_field, "scatter": scatter, "price_sparkline": price_sparkline,
              "price_area": price_area, "combo": combo, "donut": donut, "area": area, "dumbbell": dumbbell,
-             "treemap": treemap, "butterfly": butterfly, "slope": slope, "marimekko": marimekko}
+             "treemap": treemap, "butterfly": butterfly, "slope": slope, "marimekko": marimekko,
+             "fan": fan, "share_area": share_area}
