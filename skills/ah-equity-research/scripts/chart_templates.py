@@ -203,28 +203,46 @@ def heatmap(stem, row_values, col_values, matrix, *, row_label, col_label,
     return _save(fig, stem, wide)
 
 
-def football_field(stem, rows: list, *, price=None, unit="元/股", wide=True,
+def football_field(stem, rows: list, *, price=None, target=None, unit="元/股", wide=True,
                    height_cm=None, digits=1):
-    """Valuation ranges by method. rows = [(label, low, base, high)] in one currency/share class."""
-    height_cm = height_cm or 1.2 + .75 * len(rows)
+    """Valuation ranges by method, one currency/share class.
+
+    rows = [(label, low, base, high)] or [(label, low, base, high, role)], role in
+    primary / cross_check / reference; base may be None. The primary method is drawn in the
+    dark accent, cross-checks in the range colour, reference ranges (e.g. 52-week) in grey.
+    """
+    height_cm = height_cm or 1.5 + .75 * len(rows)
     fig, ax = _fig(wide, height_cm)
-    for i, (label, lo, mid, hi) in enumerate(rows):
-        ax.barh(i, hi - lo, left=lo, height=.5, color=_chart_opt("range_bar", cs.PALETTE[3]), zorder=2)
-        ax.plot([mid, mid], [i - .25, i + .25], color=cs.PALETTE[0], lw=2, zorder=3)
-        # White boxes keep value labels legible where the price line crosses them.
+    colors = {"primary": _chart_opt("range_primary", cs.PALETTE[0]),
+              "cross_check": _chart_opt("range_bar", cs.PALETTE[3]),
+              "reference": _chart_opt("range_reference", "#C9CED3")}
+    for i, row in enumerate(rows):
+        label, lo, mid, hi = row[:4]
+        role = row[4] if len(row) > 4 else "cross_check"
+        ax.barh(i, hi - lo, left=lo, height=.5 if role != "reference" else .32,
+                color=colors.get(role, colors["cross_check"]), zorder=2)
+        if mid is not None:
+            ax.plot([mid, mid], [i - .25, i + .25], color="white" if role == "primary" else cs.PALETTE[0], lw=2, zorder=3)
         box = dict(facecolor="white", edgecolor="none", pad=.6)
         ax.text(lo, i, _fmt(lo, digits) + " ", ha="right", va="center", fontsize=8, zorder=6, bbox=box)
         ax.text(hi, i, " " + _fmt(hi, digits), ha="left", va="center", fontsize=8, zorder=6, bbox=box)
+    n = len(rows)
     if price:
         mark = _chart_opt("price_mark", cs.PALETTE[2])
         ax.axvline(price, color=mark, ls="--", lw=1, zorder=4)
-        ax.text(price, -.78, f"现价 {_fmt(price, 2)}", ha="center", va="center", fontsize=8,
+        ax.text(price, -.78, f"当前股价 {_fmt(price, 2)}", ha="center", va="center", fontsize=8,
                 color=mark, zorder=6, bbox=dict(facecolor="white", edgecolor="none", pad=.8))
-    ax.set_yticks(range(len(rows)), [r[0] for r in rows]); ax.invert_yaxis()
-    ax.set_ylim(len(rows) - .4, -1.0)
+    if target:
+        tm = _chart_opt("target_mark", cs.PALETTE[1])
+        ax.axvline(target, color=tm, ls="-", lw=1.2, zorder=4)
+        ax.text(target, n - .05, f"目标价 {_fmt(target, digits)}", ha="center", va="center", fontsize=8,
+                color=tm, zorder=6, bbox=dict(facecolor="white", edgecolor="none", pad=.8))
+    ax.set_yticks(range(n), [r[0] for r in rows]); ax.invert_yaxis()
+    ax.set_ylim(n - .4 + (.45 if target else 0), -1.0)
     ax.spines[["top", "right", "left"]].set_visible(False); ax.tick_params(axis="y", length=0)
     ax.grid(axis="x", color="#E5EAEE"); ax.set_axisbelow(True)
-    lo_all = min(min(r[1] for r in rows), price or math.inf); hi_all = max(max(r[3] for r in rows), price or -math.inf)
+    marks = [x for x in (price, target) if x]
+    lo_all = min([r[1] for r in rows] + marks); hi_all = max([r[3] for r in rows] + marks)
     pad = (hi_all - lo_all) * .15; ax.set_xlim(max(0, lo_all - pad), hi_all + pad)
     if unit: ax.set_xlabel(unit)
     return _save(fig, stem, wide)

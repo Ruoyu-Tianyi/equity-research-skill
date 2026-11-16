@@ -261,6 +261,157 @@ def resolve_fin_section(sec: dict, base: Path, model_path: str | None, years: li
             "digits": sec.get("digits", 0)}
 
 
+# ---------- valuation: one primary method + cross-checks (references/workflow-stages.md) ----------
+CROSS_CHECK_BAND = 0.15   # a cross-check whose range sits more than 15% away from the target must be explained
+VALUATION_ROLES = ("primary", "cross_check", "reference")
+
+
+def load_valuation(spec: dict, base: Path):
+    v = spec.get("valuation")
+    if isinstance(v, str):
+        v = json.loads((base / v).read_text(encoding="utf-8-sig"))
+    return v or None
+
+
+def _range_gap(lo, hi, x):
+    """Relative distance of x outside [lo, hi]; 0 when inside."""
+    if x is None or lo is None or hi is None: return 0.0
+    if x < lo: return (lo - x) / x
+    if x > hi: return (x - hi) / x
+    return 0.0
+
+
+def valuation_issues(v: dict, rating: dict | None = None, price: float | None = None) -> list:
+    out = []
+    def add(level, msg): out.append((level, msg))
+    if not isinstance(v, dict): return [("error", "valuation 应为对象或指向 valuation.json 的路径")]
+    if "weights" in v or any("weight" in c for c in v.get("cross_checks", [])):
+        add("error", "估值框架为“主方法+交叉验证”，不对各方法加权；删除 weight/weights")
+    p = v.get("primary")
+    if not p: return out + [("error", "缺少 primary（主估值方法）")]
+    for k in ("method", "reason", "target_price", "low", "high"):
+        if p.get(k) in (None, ""): add("error", f"primary 缺少 {k}")
+    if p.get("reason") and len(p["reason"]) < 12:
+        add("error", "primary.reason 过短：说明为何该方法最能反映公司价值（业务特征、盈利阶段、模型口径）")
+    tp = p.get("target_price")
+    base_v = p.get("base", tp)
+    if None not in (p.get("low"), p.get("high"), base_v) and not p["low"] <= base_v <= p["high"]:
+        add("error", "primary 的 low ≤ base ≤ high 不成立")
+    if tp is not None and None not in (p.get("low"), p.get("high")) and not p["low"] <= tp <= p["high"]:
+        add("error", "目标价不在主方法区间内")
+    adj = p.get("adjustments", [])
+    if p.get("model_value") is not None and tp is not None and abs(tp - p["model_value"]) > .005 * tp and not adj:
+        add("error", "目标价与模型每股价值不同，须在 primary.adjustments 列出调整项（如计入募资、滚动至12个月）")
+    for a_ in adj:
+        if not a_.get("item") or a_.get("per_share") is None:
+            add("error", "adjustments 每项须有 item 与 per_share")
+    if adj and p.get("model_value") is not None and tp is not None:
+        if abs(p["model_value"] + sum(a_.get("per_share", 0) for a_ in adj) - tp) > max(.5, .005 * tp):
+            add("error", "模型每股价值 + 调整项 ≠ 目标价，检查调整项")
+    ccs = v.get("cross_checks", [])
+    if len(ccs) < 1: add("error", "至少需要1个交叉验证方法")
+    elif len(ccs) < 2: add("warn", "交叉验证方法少于2个；说明为何其他方法不适用")
+    for c in ccs:
+        name = c.get("method", "?")
+        if c.get("low") is None or c.get("high") is None:
+            add("error", f"交叉验证“{name}”缺少 low/high"); continue
+        if c["low"] > c["high"]: add("error", f"交叉验证“{name}” low > high")
+        if not c.get("basis"): add("error", f"交叉验证“{name}”缺少 basis（倍数、样本、口径或情景定义）")
+        if tp and _range_gap(c["low"], c["high"], tp) > CROSS_CHECK_BAND and not c.get("explanation"):
+            add("error", f"交叉验证“{name}”区间{c['low']:.1f}–{c['high']:.1f}与目标价{tp:.1f}偏离超过{CROSS_CHECK_BAND:.0%}，须写 explanation（偏离原因及为何不改变主方法结论）")
+        if c.get("role", "cross_check") not in VALUATION_ROLES[1:]:
+            add("error", f"“{name}” role 只能为 cross_check 或 reference")
+    tr = v.get("trading_range")
+    if tr and (tr.get("low") is None or tr.get("high") is None or tr["low"] > tr["high"]):
+        add("error", "trading_range 须有 low ≤ high")
+    if rating and tp is not None and rating.get("target_price") is not None \
+            and abs(rating["target_price"] - tp) > .005 * tp:
+        add("error", f"评级目标价 {rating['target_price']} 与主方法目标价 {tp} 不一致")
+    return out
+
+
+def football_rows(v: dict) -> list:
+    p = v["primary"]
+    rows = [(p.get("label") or f"{p['method']}（主方法）", p["low"], p.get("base", p["target_price"]), p["high"], "primary")]
+    for c in v.get("cross_checks", []):
+        rows.append((c.get("label") or c["method"], c["low"], c.get("base"), c["high"], c.get("role", "cross_check")))
+    tr = v.get("trading_range")
+    if tr: rows.append((tr.get("label", "52周股价区间"), tr["low"], None, tr["high"], "reference"))
+    return rows
+
+
+def valuation_table(v: dict, digits=0) -> tuple:
+    role = {"primary": "主方法", "cross_check": "交叉验证", "reference": "参考"}
+    f = lambda x: f"{x:,.{digits}f}"
+    p = v["primary"]
+    note = p.get("basis", "")
+    if p.get("adjustments"):
+        note += "；调整项：" + "，".join(f"{a['item']}（每股{a['per_share']:+.1f}元）" for a in p["adjustments"])
+    rows = [[p["method"], role["primary"], f"{f(p['low'])}–{f(p['high'])}（目标价{f(p['target_price'])}）", note.strip("；")]]
+    for c in v.get("cross_checks", []):
+        rng = f"{f(c['low'])}–{f(c['high'])}" + (f"（中值{f(c['base'])}）" if c.get("base") is not None else "")
+        txt = c.get("basis", "") + (("；" + c["explanation"]) if c.get("explanation") else "")
+        rows.append([c["method"], role.get(c.get("role", "cross_check")), rng, txt])
+    return ["估值方法", "作用", "每股价值区间（元）", "关键假设与说明"], rows
+
+
+# ---------- prose checks (references/writing-style.md) ----------
+VAGUE = ("值得关注", "有望受益", "未来可期", "稳步推进", "持续向好", "赋能", "多点开花", "前景广阔", "大有可为",
+         "不容小觑", "蓄势待发", "全面开花", "行稳致远", "强劲动能", "迎来拐点", "加速兑现")
+FILLER = ("如下图所示", "如下表所示", "下表列示", "下图展示", "见下图", "见下表", "如图所示", "如表所示")
+HEDGE_END = ("仍需关注", "尚待验证", "有待观察", "值得持续跟踪", "需持续关注", "有待验证")
+GENERIC_HEADINGS = {"公司概况", "公司简介", "行业分析", "行业概况", "公司分析", "投资逻辑", "盈利预测", "估值分析",
+                    "财务分析", "业务分析", "竞争优势", "行业格局", "风险分析"}
+PROSE_LIMITS = {"lead_chars": 60, "sentence_chars": 110, "evidence_chars": 90, "hedge_paragraphs": 2, "we_think": 6}
+
+
+def _sentences(t):
+    return [x for x in re.split(r"(?<=[。！？；])", t) if x.strip()]
+
+
+def prose_issues(spec: dict) -> list:
+    """Writing-quality warnings for body paragraphs, cover theses and headings."""
+    out = []
+    def add(where, msg, level="warn"): out.append({"level": level, "where": where, "message": msg})
+    lim = {**PROSE_LIMITS, **spec.get("prose_limits", {})}
+    paras = []   # (where, text, in_appendix)
+    for k, th in enumerate(spec.get("cover", {}).get("theses", [])):
+        paras.append((f"cover.theses[{k}]", (th.get("title", "") + th.get("text", "")), False))
+    appendix = False
+    for i, b in enumerate(spec.get("body", [])):
+        t = b.get("type")
+        if t == "h1": appendix = bool(b.get("appendix"))
+        if t in ("h1", "h2") and not appendix:
+            tail = b.get("text", "").split("：")[-1].strip()
+            if tail in GENERIC_HEADINGS or b.get("text", "").strip() in GENERIC_HEADINGS:
+                add(f"body[{i}]", f"标题“{b.get('text')}”只是栏目名，改为“对象+变化+结果”的判断句")
+        if t == "p": paras.append((f"body[{i}]", b.get("text", ""), appendix))
+    hedges, we = [], 0
+    for where, txt, app in paras:
+        we += txt.count("我们认为")
+        for w in VAGUE:
+            if w in txt: add(where, f"套话“{w}”：换成具体的变量、幅度与比较对象")
+        for w in FILLER:
+            if w in txt: add(where, f"“{w}”是冗余引导语：正文给判断，图表给证据，不复述图表")
+        if re.search(r"[一-鿿][,;:?!]|[,;:?!][一-鿿]|[一-鿿]\(|\)[一-鿿]", txt):
+            add(where, "中文语境使用了半角标点（, ; : ( ) 等），改为全角")
+        ss = _sentences(txt)
+        if app: continue
+        if ss and len(ss[0]) > lim["lead_chars"] and not where.startswith("cover"):
+            add(where, f"段首句{len(ss[0])}字：段首用一句{lim['lead_chars']}字以内的判断，论据放后句")
+        for s_ in ss:
+            if len(s_) > lim["sentence_chars"]:
+                add(where, f"长句{len(s_)}字（“{s_[:14]}…”）：拆成判断句与论据句"); break
+        if len(txt) >= lim["evidence_chars"] and not re.search(r"\d", txt):
+            add(where, "段落没有任何数据：补充比较数据，或并入相邻段落")
+        if ss and any(h in ss[-1] for h in HEDGE_END): hedges.append(where)
+    if len(hedges) > lim["hedge_paragraphs"]:
+        add("text", f"{len(hedges)}段以“仍需关注/尚待验证”类句子收尾（{', '.join(hedges[:4])}…）：把决定结论的条件写清楚，其余删去")
+    if we > lim["we_think"]:
+        add("text", f"“我们认为”出现{we}次：事实直接陈述，判断句用一次即可")
+    return out
+
+
 # ---------- lint ----------
 def lint(spec: dict, base: Path) -> list[dict]:
     issues = []
@@ -285,6 +436,17 @@ def lint(spec: dict, base: Path) -> list[dict]:
             if len(c) > 32: add("warn", f"body[{i}]", f"图表标题过长（{len(c)}字）：{c[:16]}…")
     rt = spec.get("rating")
     price_ = spec.get("cover", {}).get("valuation", {}).get("price")
+    try:
+        vdef = load_valuation(spec, base)
+    except (OSError, ValueError) as e:
+        vdef = None; add("error", "valuation", f"无法读取估值定义：{e}")
+    if vdef:
+        for level, msg in valuation_issues(vdef, rt if isinstance(rt, dict) else None, price_):
+            add(level, "valuation", msg)
+    elif isinstance(rt, dict):
+        add("warn", "valuation", "未设置 valuation（主估值方法+交叉验证）；目标价的方法依据无法核验")
+    if any(b.get("type") == "valuation_summary" for b in spec.get("body", [])) and not vdef:
+        add("error", "valuation", "valuation_summary 需要 valuation 定义")
     if rt not in (None, False):
         if not rt.get("target_price"): add("error", "rating", "评级须同时给出目标价 target_price（12个月）")
         elif not price_: add("error", "rating", "评级须有当前股价（cover.valuation.price）")
@@ -578,6 +740,18 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
                             subtotal_rows=tuple(tb["subtotal_rows"]), keep_together=True)
             r.end_columns()
             if b.get("source"): r.source(b["source"])
+        elif ty == "valuation_summary":
+            v = load_valuation(spec, base)
+            item = {"wide": True, "chart": {"template": "football_field", "args": {
+                "rows": football_rows(v), "price": cover.get("valuation", {}).get("price"),
+                "target": v["primary"]["target_price"], "unit": b.get("unit", "元/股"), "digits": b.get("digits", 0)}}}
+            path = _resolve_image(item, base, figdir, b.get("id", "valuation_football_field"), audits)
+            r.figure(path, b.get("caption", "估值方法对照：主方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
+                     width_cm=audits[-1].get("target_width_cm"))
+            if b.get("table", True):
+                hd, rows = valuation_table(v, b.get("digits", 0))
+                r.table(hd, rows, caption=b.get("table_caption", "估值方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
+                        widths_cm=b.get("widths", [3.2, 1.8, 4.0, 8.3]), size=b.get("size", 8.4), keep_together=True)
         elif ty == "page_break": r.page_break()
         elif ty == "end_appendix": r.end_appendix()
         else: raise ValueError(f"未知 block 类型：{ty}")
@@ -648,7 +822,7 @@ def main():
     a = ap.parse_args()
     spec_path = Path(a.spec).resolve(); base = spec_path.parent
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
-    issues = lint(spec, base)
+    issues = lint(spec, base) + prose_issues(spec)
     for x in issues: print(f"[{x['level']}] {x['where']}: {x['message']}")
     errors = [x for x in issues if x["level"] == "error"]
     if a.lint_only: sys.exit(1 if errors else 0)
