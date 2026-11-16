@@ -6,7 +6,7 @@
 
 面向 **A 股与港股** 的中文研究工作流 · **通用 Agent Skill**（Claude Code · Codex · 其他支持 SKILL.md 的 Agent）
 
-[![Version](https://img.shields.io/badge/version-2.10.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
+[![Version](https://img.shields.io/badge/version-2.11.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](requirements.txt)
 [![Output](https://img.shields.io/badge/output-DOCX%20%2B%20PDF-4C687B?style=flat-square)](#preview)
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
@@ -119,9 +119,9 @@ python -m pip install -r requirements.txt
 
 图表从模型、来源数据与逐日行情绘制，按问题选图：规模与增速用柱线组合图，结构用环形图，趋势用渐变面积图，两期对比用哑铃图，估值用价值桥、区间图与敏感性热力图。预测期柱体变浅并以虚线标注；首页股价图使用逐日连续数据并叠加基准指数。图表标题采用“图 1：对象（单位）”的中文研报格式，中文楷体、英文及数字 Times New Roman 贯穿全文。
 
-### 两种版式：通栏与左图右文
+### 有表现力的图表，克制的配色
 
-默认通栏；图表多的报告可设 `"layout": {"mode": "figures_left"}`，每张图独占一行，左栏放图、右栏放引出这张图的论述，读者左看证据、右读判断。图所在的行不跨页，图题与图始终在同一页；长段落在下一行接续，避免大块留白。左栏图表按栏宽原生绘制，字号与通栏一致；表格、估值足球场图、首页与附录保持通栏。
+新增矩形树图（收入结构）、背靠背条形图（两家公司多指标对比，单位不混轴）、斜率图（两期变化）与马赛克图（细分市场规模×厂商份额）。机构研究配色为海军蓝、钢蓝、浅钢蓝与琥珀强调；柱体更细，分组柱留细缝，多系列预测柱用细斜纹标注而不变色。生成前提示表格与正文的平衡：小表改写成正文或图、标题后先给判断、相邻表格须有衔接。
 
 ### 让正文易读，让附录可查
 
@@ -227,7 +227,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "skills/ah-equity-research/s
 | 报告规格与生成命令 | [报告规格](skills/ah-equity-research/references/report-spec.md) |
 | 章节结构、图表与附录 | [报告蓝图](skills/ah-equity-research/assets/report-blueprint.md) · [版式规范](skills/ah-equity-research/references/report-design.md) |
 | 评级与目标价 | [评级体系](skills/ah-equity-research/references/rating-system.md) |
-| 主题配色与自定义名称 | [风格配置](skills/ah-equity-research/references/style-presets.md) |
+| 主题配色、自定义名称与联系方式 | [风格配置](skills/ah-equity-research/references/style-presets.md) |
 | 数字核对与最终页面验收 | [质量检查](skills/ah-equity-research/references/quality-gates.md) · [评审量表](skills/ah-equity-research/references/review-rubric.md) |
 
 <details>
@@ -275,7 +275,7 @@ skills/ah-equity-research/
 
 ## 发展路线
 
-已完成：分步流程与阶段关卡、论证与中文表达检查、主方法加交叉验证的估值框架与计算器（v2.8–v2.9），通栏与左图右文两种版式（v2.10）。
+已完成：分步流程与阶段关卡、论证与中文表达检查、主方法加交叉验证的估值框架与计算器（v2.8–v2.9），图表与版面美观优化（v2.11）。
 
 **远期**
 

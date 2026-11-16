@@ -13,11 +13,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import math
-from contextlib import contextmanager
 
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.ticker import FuncFormatter
 
 import chart_style as cs
 
@@ -43,17 +43,8 @@ def draft(enabled: bool = True, theme: str = "institutional") -> None:
                              "svg.fonttype": "path"})
 
 
-@contextmanager
-def narrow_width(width_cm: float):
-    """Render half-width charts at another native width (e.g. the left column of figures_left)."""
-    global HALF
-    old, HALF = HALF, width_cm
-    try: yield
-    finally: HALF = old
-
-
 def _fig(wide: bool, height_cm: float, font_pt: float = 8.75):
-    return cs.figure(wide=wide, width_cm=WIDE if wide else HALF, height_cm=height_cm, font_size_pt=font_pt)
+    return cs.figure(wide=wide, height_cm=height_cm, font_size_pt=font_pt)
 
 
 def _save(fig, stem, wide, font_pt=8.75):
@@ -108,17 +99,21 @@ def bar(stem, categories, series: dict, *, unit="", wide=False, height_cm=5.6,
     """Grouped or stacked bars. series = {name: [values aligned to categories]}."""
     fig, ax = _fig(wide, height_cm)
     n = len(series); x = list(range(len(categories)))
-    width = .7 if stacked or n == 1 else .8 / n
+    # slimmer bars read more refined; grouped bars keep a hairline gap inside the group
+    width = .56 if stacked or n == 1 else .76 / n
+    inner = width * (.88 if not stacked and n > 1 else 1)
     bottom = [0.0] * len(categories)
     for k, (name, vals) in enumerate(series.items()):
         vals = [v if v is not None else 0 for v in vals]
-        pos = x if stacked or n == 1 else [i - .4 + width * (k + .5) for i in x]
+        pos = x if stacked or n == 1 else [i - .38 + width * (k + .5) for i in x]
         draw = ax.barh if horizontal else ax.bar
         kw = {"left": bottom} if (horizontal and stacked) else ({"bottom": bottom} if stacked else {})
-        bars = draw(pos, vals, width if not horizontal else width, label=name,
-                    color=cs.PALETTE[k % 4], zorder=2, **kw)
-        if forecast_from in list(categories) and not horizontal:   # forecast bars read lighter than actuals
-            for b_ in list(bars)[list(categories).index(forecast_from):]: b_.set_alpha(.6)
+        bars = draw(pos, vals, inner, label=name, color=cs.PALETTE[k % 4], zorder=2, linewidth=0, **kw)
+        if forecast_from in list(categories) and not horizontal:
+            for b_ in list(bars)[list(categories).index(forecast_from):]:
+                if n == 1: b_.set_alpha(.6)          # single series: lighter forecast bars
+                else:                                 # several series: keep each colour, mark forecasts with a fine hatch
+                    b_.set_hatch("//"); b_.set_edgecolor((1, 1, 1, .42)); b_.set_linewidth(0)
         if labels and (not stacked or k == n - 1):
             tops = [b + v for b, v in zip(bottom, vals)] if stacked else vals
             for p_, t in zip(pos, tops):
@@ -166,11 +161,11 @@ def waterfall(stem, steps: list, *, unit="", wide=True, height_cm=6.2, digits=1)
     run = 0.0
     for i, (label, value, kind) in enumerate(steps):
         if kind == "total":
-            ax.bar(i, value, color=cs.PALETTE[0], width=.6, zorder=2); run = value; top = value
+            ax.bar(i, value, color=cs.PALETTE[0], width=.5, zorder=2); run = value; top = value
         else:
             base = run if value >= 0 else run + value
-            ax.bar(i, abs(value), bottom=base, width=.6, zorder=2,
-                   color=cs.PALETTE[2] if value >= 0 else cs.PALETTE[1])
+            ax.bar(i, abs(value), bottom=base, width=.5, zorder=2,
+                   color=cs.PALETTE[1] if value >= 0 else _chart_opt("price_mark", cs.PALETTE[3]))
             run += value; top = base + abs(value)
         ax.text(i, top, _fmt(value, digits), ha="center", va="bottom", fontsize=8)
         if i < len(steps) - 1:   # connector to the next bar at the running total
@@ -455,6 +450,130 @@ def dumbbell(stem, rows: list, *, labels=("起点", "终点"), unit="", wide=Fal
     return _save(fig, stem, wide)
 
 
+# ---------- expressive templates ----------
+def _squarify(values, x, y, w, h):
+    """Squarified treemap layout (Bruls et al.); returns rectangles in input order."""
+    total = sum(values); items = sorted(enumerate(values), key=lambda t: -t[1]); out = {}
+    vals = [v * w * h / total for _, v in items]; idx = [i for i, _ in items]
+    def worst(row, side):
+        s_ = sum(row); return max(max(side * side * r / (s_ * s_), s_ * s_ / (side * side * r)) for r in row)
+    while vals:
+        side = min(w, h); row = [vals[0]]; k = 1
+        while k < len(vals) and worst(row + [vals[k]], side) <= worst(row, side):
+            row.append(vals[k]); k += 1
+        s_ = sum(row)
+        if w >= h:
+            cw = s_ / h; yy = y
+            for v, i in zip(row, idx[:k]): out[i] = (x, yy, cw, v / cw); yy += v / cw
+            x += cw; w -= cw
+        else:
+            ch = s_ / w; xx = x
+            for v, i in zip(row, idx[:k]): out[i] = (xx, y, v / ch, ch); xx += v / ch
+            y += ch; h -= ch
+        vals, idx = vals[k:], idx[k:]
+    return [out[i] for i in range(len(values))]
+
+
+def treemap(stem, labels: list, values: list, *, unit="", wide=False, height_cm=5.6, digits=1, total_label=None):
+    """Composition as nested area: each tile's area = share; labels carry value and share."""
+    fig, ax = _fig(wide, height_cm)
+    W, H = (17.06 if wide else HALF), height_cm
+    rects = _squarify(values, 0, 0, W, H); total = sum(values)
+    shades = [cs.PALETTE[0], cs.PALETTE[1], cs.PALETTE[2], _chart_opt("price_mark", cs.PALETTE[3]), "#D6DEE7", "#E9EDF2"]
+    for k, ((x, y, w, h), lab, v) in enumerate(zip(rects, labels, values)):
+        c = shades[k % len(shades)]
+        ax.add_patch(plt.Rectangle((x, y), w, h, facecolor=c, edgecolor="white", linewidth=2))
+        dark = k in (0, 1) or c == cs.PALETTE[0]
+        tc = "white" if dark else "#1E2328"
+        share = f"{v / total:.0%}"
+        if w * h / (W * H) <= .035: continue
+        if h < .95:                                   # flat tile: one short line
+            ax.text(x + .15, y + h / 2, f"{lab} {share}" if w < 4.5 else f"{lab}  {_fmt(v, digits)}{unit}  {share}",
+                    ha="left", va="center", fontsize=7, color=tc)
+        else:
+            big = w > 3.2 and h > 1.3
+            ax.text(x + .15, y + .2, lab, ha="left", va="top", fontsize=8.5 if big else 7.5, color=tc, fontweight="bold")
+            ax.text(x + .15, y + (.62 if big else .55), f"{_fmt(v, digits)}{unit}" + (f"  {share}" if big else f"\n{share}"),
+                    ha="left", va="top", fontsize=8 if big else 7.2, color=tc, linespacing=1.3)
+    ax.set_xlim(0, W); ax.set_ylim(H, 0); ax.axis("off")
+    if total_label: ax.set_title(total_label, fontsize=8.5, loc="left", color="#5E6573", pad=3)
+    return _save(fig, stem, wide)
+
+
+def butterfly(stem, rows: list, *, names=("公司", "对手"), wide=False, height_cm=None, digits=1):
+    """Back-to-back comparison of two companies across metrics with different units.
+    rows = [(metric, value_a, value_b, unit)]; each row is scaled to its own max so units never mix on one axis."""
+    height_cm = height_cm or 1.4 + .82 * len(rows)
+    fig, ax = _fig(wide, height_cm)
+    ca, cb = cs.PALETTE[0], cs.PALETTE[1]
+    for i, (metric, a, b, u) in enumerate(rows):
+        m = max(abs(a), abs(b)) or 1
+        for v, side, c in ((a, -1, ca), (b, 1, cb)):
+            L = abs(v) / m * .86
+            ax.barh(i, side * L, left=side * .44, height=.5, color=c if v >= 0 else "white", edgecolor=c,
+                    hatch=None if v >= 0 else "////", linewidth=.8, zorder=2)
+            ax.text(side * (.44 + L + .03), i, f"{_fmt(v, digits)}{u}", ha="left" if side > 0 else "right", va="center", fontsize=8)
+        ax.text(0, i, metric, ha="center", va="center", fontsize=8.2, color="#1E2328")
+    ax.text(-.44, -.85, names[0], ha="right", va="center", fontsize=8.5, color=ca, fontweight="bold")
+    ax.text(.44, -.85, names[1], ha="left", va="center", fontsize=8.5, color=cb, fontweight="bold")
+    ax.set_xlim(-1.75, 1.75); ax.set_ylim(len(rows) - .45, -1.25); ax.axis("off")
+    return _save(fig, stem, wide)
+
+
+def slope(stem, rows: list, *, labels=("期初", "期末"), unit="", wide=False, height_cm=6.0, digits=1, highlight=None):
+    """Slope chart: how each item moved between two periods. rows = [(name, start, end)]."""
+    fig, ax = _fig(wide, height_cm)
+    span = (max(max(a, b) for _, a, b in rows) - min(min(a, b) for _, a, b in rows)) or 1
+    def spread(vals, gap=span * .085):
+        """Nudge label positions apart (keeps order) so close values do not overprint."""
+        order = sorted(range(len(vals)), key=lambda k: vals[k]); out = list(vals)
+        for n_ in range(1, len(order)):
+            prev, cur = order[n_ - 1], order[n_]
+            if out[cur] - out[prev] < gap: out[cur] = out[prev] + gap
+        return out
+    ya, yb = spread([a for _, a, _ in rows]), spread([b for _, _, b in rows])
+    for (name, a, b), la, lb in zip(rows, ya, yb):
+        hot = highlight is None or name in (highlight if isinstance(highlight, (list, tuple)) else [highlight])
+        c = cs.PALETTE[0] if hot else "#B8C2CC"
+        ax.plot([0, 1], [a, b], color=c, lw=1.8 if hot else 1.1, marker="o", ms=4, mec="white", mew=.8, zorder=3 if hot else 2)
+        ax.text(-.04, la, f"{name} {_fmt(a, digits)}", ha="right", va="center", fontsize=7.8, color=c if hot else "#7A8590")
+        ax.text(1.04, lb, f"{_fmt(b, digits)}", ha="left", va="center", fontsize=7.8, color=c if hot else "#7A8590")
+    ax.set_xlim(-.62, 1.22); ax.set_xticks([0, 1], labels); ax.tick_params(axis="x", length=0)
+    ax.spines[["top", "right", "left"]].set_visible(False); ax.set_yticks([])
+    for x_ in (0, 1): ax.axvline(x_, color="#D5DBE1", lw=.8, zorder=1)
+    if unit: ax.text(0, 1.02, unit, transform=ax.transAxes, fontsize=8, color="#5E6573")
+    return _save(fig, stem, wide)
+
+
+def marimekko(stem, segments: list, *, unit="", wide=True, height_cm=6.4, digits=0):
+    """Market map: column width = segment size, stacked height = player share within the segment.
+    segments = [(segment_name, size, {player: share%})]; shares within a segment should sum to <=100 (rest = 其他)."""
+    fig, ax = _fig(wide, height_cm)
+    total = sum(s for _, s, _ in segments); x = 0
+    players = []
+    for _, _, sh in segments:
+        for k in sh:
+            if k not in players: players.append(k)
+    colors = {p_: c for p_, c in zip(players, [cs.PALETTE[0], cs.PALETTE[1], cs.PALETTE[2], _chart_opt("price_mark", cs.PALETTE[3]), "#7A8590", "#C9D3DD"])}
+    for seg, size, shares in segments:
+        w = size / total * 100; y = 0
+        rest = max(0, 100 - sum(shares.values()))
+        for p_, v in list(shares.items()) + ([("其他", rest)] if rest > .5 else []):
+            c = colors.get(p_, "#E4E9EE")
+            ax.add_patch(plt.Rectangle((x, y), w, v, facecolor=c, edgecolor="white", linewidth=1.5))
+            if v > 11 and w > 9:
+                ax.text(x + w / 2, y + v / 2, f"{p_}\n{v:.0f}%", ha="center", va="center", fontsize=7.2,
+                        color="white" if c in (cs.PALETTE[0], cs.PALETTE[1]) else "#1E2328")
+            y += v
+        ax.text(x + w / 2, -4, f"{seg}\n{_fmt(size, digits)}{unit}（{size / total:.0%}）", ha="center", va="top", fontsize=7.6)
+        x += w
+    ax.set_xlim(0, 100); ax.set_ylim(0, 100); ax.set_xticks([])
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}%"))
+    ax.spines[["top", "right", "bottom"]].set_visible(False)
+    return _save(fig, stem, wide)
+
+
 TEMPLATES = {"bar": bar, "line": line, "waterfall": waterfall, "heatmap": heatmap,
              "football_field": football_field, "scatter": scatter, "price_sparkline": price_sparkline,
-             "price_area": price_area, "combo": combo, "donut": donut, "area": area, "dumbbell": dumbbell}
+             "price_area": price_area, "combo": combo, "donut": donut, "area": area, "dumbbell": dumbbell,
+             "treemap": treemap, "butterfly": butterfly, "slope": slope, "marimekko": marimekko}

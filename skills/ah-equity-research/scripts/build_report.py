@@ -20,8 +20,7 @@ sys.path.insert(0, str(HERE))
 from docx.shared import Cm, Pt  # noqa: E402
 from docx.enum.text import WD_ALIGN_PARAGRAPH  # noqa: E402
 from research_editorial_layout import EditorialReport, Theme, _font  # noqa: E402
-import chart_templates as ct
-import chart_style as cs  # noqa: E402
+import chart_templates as ct  # noqa: E402
 
 NM = "N/M"
 DEFAULT_DISCLAIMER = ("本报告基于研究截止日前的公开资料形成研究观点，事实数据均已注明来源，盈利预测、估值、评级与目标价为研究判断，存在不确定性；"
@@ -406,6 +405,28 @@ def prose_issues(spec: dict) -> list:
         if len(txt) >= lim["evidence_chars"] and not re.search(r"\d", txt):
             add(where, "段落没有任何数据：补充比较数据，或并入相邻段落")
         if ss and any(h in ss[-1] for h in HEDGE_END): hedges.append(where)
+    # table / prose balance in the body (appendix tables are reference material and exempt)
+    appendix = False; chap = None; counts = {}
+    body = spec.get("body", [])
+    for i, b in enumerate(body):
+        t = b.get("type")
+        if t == "h1":
+            appendix = bool(b.get("appendix")); chap = b.get("text", "")[:14]; counts.setdefault(chap, [0, 0])
+        if appendix or chap is None: continue
+        if t == "p": counts[chap][1] += 1
+        if t != "table": continue
+        counts[chap][0] += 1
+        rows, cols = len(b.get("rows", [])), len(b.get("headers", []))
+        if rows <= 3 and cols <= 3 and not b.get("keep_table"):
+            add(f"body[{i}]", f"表“{b.get('caption')}”只有{rows}行{cols}列：改写为一句话或并入图表（确需保留写 keep_table: true）")
+        prev = body[i - 1].get("type") if i else None
+        if prev == "table":
+            add(f"body[{i}]", f"表“{b.get('caption')}”紧接上一张表：两表之间用一段判断衔接，或合并")
+        if prev in ("h1", "h2", "h3"):
+            add(f"body[{i}]", f"表“{b.get('caption')}”直接跟在标题后：先用一段话给出判断，表格只提供证据")
+    for c, (nt, np_) in counts.items():
+        if nt > max(2, np_):
+            add("text", f"章节“{c}…”表格{nt}张、段落{np_}段：表格多于论述，把次要表格移入附录或改写为正文/图表")
     if len(hedges) > lim["hedge_paragraphs"]:
         add("text", f"{len(hedges)}段以“仍需关注/尚待验证”类句子收尾（{', '.join(hedges[:4])}…）：把决定结论的条件写清楚，其余删去")
     if we > lim["we_think"]:
@@ -435,13 +456,6 @@ def lint(spec: dict, base: Path) -> list[dict]:
         caps = [b.get("caption")] + [x.get("caption") for x in b.get("items", [])]
         for c in [c for c in caps if c]:
             if len(c) > 32: add("warn", f"body[{i}]", f"图表标题过长（{len(c)}字）：{c[:16]}…")
-    lay = spec.get("layout")
-    if lay:
-        if lay.get("mode") not in ("standard", "figures_left"):
-            add("error", "layout", "layout.mode 只能为 standard（通栏）或 figures_left（左图右文）")
-        lc, gc = lay.get("left_cm", 7.0), lay.get("gap_cm", .6)
-        if lay.get("mode") == "figures_left" and not (5.5 <= lc <= 8.5 and 17.06 - lc - gc >= 7):
-            add("error", "layout", "figures_left 左栏宜为5.5–8.5厘米，且右栏不窄于7厘米")
     rt = spec.get("rating")
     price_ = spec.get("cover", {}).get("valuation", {}).get("price")
     try:
@@ -582,16 +596,7 @@ def _chart(item, figdir: Path, key: str):
     args = dict(c.get("args", {}))
     if "wide" in item and c["template"] not in ("price_sparkline", "price_area"):
         args["wide"] = item["wide"]
-    if item.get("_side") and c["template"] not in ("price_sparkline", "price_area"):
-        args["wide"] = False      # left column of figures_left: native narrow chart (width set by ct.narrow_width)
-    try:
-        audit = fn(str(figdir / key), **args)
-    except cs.ChartValidationError:
-        if not item.get("_side"): raise
-        # text that cannot fit the narrow left column: draw at standard half width and scale into the column
-        with ct.narrow_width(8.085):
-            audit = fn(str(figdir / key), **args)
-        audit = {**audit, "side_fallback": "drawn at 8.085 cm and scaled into the left column"}
+    audit = fn(str(figdir / key), **args)
     return Path(audit["png"]), audit
 
 
@@ -635,6 +640,10 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
         d = derive_rating(rt, price_)
         r.rating_panel(rt.get("rating") or d["rating"], rt.get("change"), rt["target_price"], price_,
                        unit=cover.get("valuation", {}).get("unit", "元"))
+    from research_editorial_layout import load_contact
+    contact = meta.get("contact")
+    contact = {} if contact is False else (contact if isinstance(contact, dict) else load_contact())
+    r.contact_block(contact)
     r.h2("公司资料")
     r.table(["项目", "数值"], [[a, b] for a, b in cover.get("facts", [])], widths_cm=[2.0, 3.0], size=8.2)
     r.source(cover.get("facts_source", "公司公告"))
@@ -717,142 +726,69 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
                 _font(q.add_run(f"{text}\t{page}"), 10.5 if level == 1 else 9.5, t.navy if level == 1 else t.muted, level == 1, t.heading_east_asia)
         if spec.get("reading_note"): r.paragraph(spec["reading_note"], size=8, color=t.muted)
     # ---- body ----
-    state = {"chapter": 0, "first": True}
-
-    def emit(i, b):
-            ty = b["type"]
-            if ty == "h1":
-                if b.get("appendix"):
-                    r.begin_appendix(b["text"], page_break=b.get("page_break", True))
-                else:
-                    state["chapter"] += 1
-                    h = r.chapter(b["text"], number=b.get("number", state["chapter"]))
-                    if state["first"] or b.get("page_break"): h.paragraph_format.page_break_before = True
-                state["first"] = False
-            elif ty == "h2": r.subheading(b["text"])
-            elif ty == "h3": r.h3(b["text"])
-            elif ty == "p":
-                r.paragraph(b["text"], lead=b.get("lead", _lead(b["text"]) if b.get("auto_lead", True) else None))
-            elif ty == "table":
-                r.table(b["headers"], _table_rows(b), caption=b.get("caption"), source=b.get("source"),
-                        widths_cm=b.get("widths"), size=b.get("size", 8.8),
-                        subtotal_rows=tuple(b.get("subtotal_rows", ())), keep_together=b.get("keep_together"))
-            elif ty == "figure":
-                path = _resolve_image(b, base, figdir, b.get("id", f"fig{i}"), audits)
-                width = audits[-1].get("target_width_cm") if b.get("chart") and audits else None
-                r.figure(path, b["caption"], source=b["source"], width_cm=width, max_height_cm=b.get("max_height_cm"))
-            elif ty == "figure_pair":
-                paths = [_resolve_image(it, base, figdir, it.get("id", f"fig{i}_{k}"), audits) for k, it in enumerate(b["items"])]
-                r.figure_pair(paths, [it["caption"] for it in b["items"]], [it["source"] for it in b["items"]])
-            elif ty == "fin_pages":
-                r.begin_columns(b.get("title", "附表：财务报表和主要财务比率"))
-                shared = {}
-                for side in ("left", "right"):
-                    if side == "right": r.next_column()
-                    for sec in b.get(side, []):
-                        tb = resolve_fin_section(sec, base, meta.get("model"), b["years"], b.get("price"), b.get("shares"), shared)
-                        r.mini_heading(tb["title"], tb.get("unit"))
-                        n = len(tb["headers"]) - 1; lw = b.get("label_width_cm", 2.5)
-                        cw = (r.current_width_cm - lw) / n
-                        r.table(tb["headers"], _table_rows(tb), widths_cm=[lw] + [cw] * n, size=b.get("size", 7.4),
-                                subtotal_rows=tuple(tb["subtotal_rows"]), keep_together=True)
-                r.end_columns()
-                if b.get("source"): r.source(b["source"])
-            elif ty == "valuation_summary":
-                v = load_valuation(spec, base)
-                part = b.get("_part", "all")
-                item = {"wide": True, "_side": b.get("_side"), "chart": {"template": "football_field", "args": {
-                    "rows": football_rows(v), "price": cover.get("valuation", {}).get("price"),
-                    "target": v["primary"]["target_price"], "unit": b.get("unit", "元/股"), "digits": b.get("digits", 0)}}}
-                if part in ("all", "figure"):
-                    path = _resolve_image(item, base, figdir, b.get("id", "valuation_football_field"), audits)
-                    r.figure(path, b.get("caption", "估值方法对照：主方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
-                             width_cm=audits[-1].get("target_width_cm"))
-                if part == "figure": return
-                if b.get("table", True):
-                    hd, rows = valuation_table(v, b.get("digits", 0))
-                    r.table(hd, rows, caption=b.get("table_caption", "估值方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
-                            widths_cm=b.get("widths", [3.2, 1.8, 4.0, 8.3]), size=b.get("size", 8.4), keep_together=False)
-                if b.get("sanity", True) and v.get("sanity"):
-                    rows = [[x["item"], x.get("display", ""), x.get("compare", "—")] for x in v["sanity"]]
-                    r.table(["合理性检查", "结果", "参照"], rows, caption=b.get("sanity_caption", "目标价合理性检查"),
-                            source=b.get("source", "估值模型、团队分析"), widths_cm=[6.0, 3.4, 7.9], size=8.4, keep_together=True)
-            elif ty == "page_break": r.page_break()
-            elif ty == "end_appendix": r.end_appendix()
-            else: raise ValueError(f"未知 block 类型：{ty}")
-
-    layout = spec.get("layout") or {}
-    side_mode = layout.get("mode") == "figures_left"
-    BREAKS = ("h1", "h2", "h3", "page_break", "fin_pages", "end_appendix")
-
-    def side_rows(rows):
-        """Each row: the exhibit(s) on the left, the paragraphs that discuss them on the right."""
-        r.side_begin(layout.get("left_cm"), layout.get("gap_cm"))
-        left_w = r._side["widths"][0] - .24
-        budget = layout.get("text_beside_chars", 320)
-        for row in rows:
-            # The exhibit row cannot split, so its caption, chart and source stay together. Text that would
-            # run far below the chart continues in a following splittable row with an empty left cell.
-            first, rest, used = [], [], 0
-            for x in row["text"]:
-                n = len(x[1].get("text", ""))
-                (first if not first or used + n <= budget else rest).append(x)
-                if not rest: used += n
-            r.side_row(cant_split=True)
-            r.side_cell("left")
-            with ct.narrow_width(left_w):
-                for i, b in row["figs"]:
-                    items = ([{**it, "type": "figure", "id": it.get("id", f"fig{i}_{k}")} for k, it in enumerate(b["items"])]
-                             if b["type"] == "figure_pair" else [b])
-                    for it in items:
-                        emit(i, {**it, "_side": True})
-            r.side_cell("right")
-            for i, b in first: emit(i, b)
-            if rest:
-                r.side_row(); r.side_cell("right")
-                for i, b in rest: emit(i, b)
-        r.side_end()
-
-    def flush(group):
-        """figures_left: pair every exhibit with the text that introduces it. Paragraphs before an exhibit go
-        beside it; each exhibit takes its own row; text after the last exhibit joins the last row.
-        Full-width blocks (tables, the valuation football field) keep their position and split the rows."""
-        rows, pending = [], []
-        def close_segment():
-            nonlocal rows, pending
-            if rows and pending: rows[-1]["text"] += pending; pending = []
-            if rows: side_rows(rows)
-            for i, b in pending: emit(i, b)
-            rows, pending = [], []
-        for i, b in group:
-            t = b["type"]
-            if t in ("figure", "figure_pair") or (t == "table" and b.get("column") == "left"):
-                # one exhibit per row, so a page can break between stacked exhibits
-                items = ([(i, {**it, "type": "figure", "id": it.get("id", f"fig{i}_{k}")}) for k, it in enumerate(b["items"])]
-                         if t == "figure_pair" else [(i, b)])
-                for n, x in enumerate(items):
-                    rows.append({"figs": [x], "text": pending if n == 0 else []})
-                pending = []
-            elif t == "p":
-                pending.append((i, b))
-            else:
-                close_segment(); emit(i, b)
-        close_segment()
-
-    group, in_appendix = [], False
+    chapter = 0; first = True
     for i, b in enumerate(spec.get("body", [])):
         ty = b["type"]
-        if ty == "h1": in_appendix = bool(b.get("appendix"))
-        if ty == "end_appendix": in_appendix = False
-        if not side_mode or in_appendix or ty in BREAKS:
-            if group: flush(group); group = []
-            emit(i, b)
-        else:
-            group.append((i, b))
-    if group: flush(group)
+        if ty == "h1":
+            if b.get("appendix"):
+                r.begin_appendix(b["text"], page_break=b.get("page_break", True))
+            else:
+                chapter += 1
+                h = r.chapter(b["text"], number=b.get("number", chapter))
+                if first or b.get("page_break"): h.paragraph_format.page_break_before = True
+            first = False
+        elif ty == "h2": r.subheading(b["text"])
+        elif ty == "h3": r.h3(b["text"])
+        elif ty == "p":
+            r.paragraph(b["text"], lead=b.get("lead", _lead(b["text"]) if b.get("auto_lead", True) else None))
+        elif ty == "table":
+            r.table(b["headers"], _table_rows(b), caption=b.get("caption"), source=b.get("source"),
+                    widths_cm=b.get("widths"), size=b.get("size", 8.8),
+                    subtotal_rows=tuple(b.get("subtotal_rows", ())), keep_together=b.get("keep_together"))
+        elif ty == "figure":
+            path = _resolve_image(b, base, figdir, b.get("id", f"fig{i}"), audits)
+            width = audits[-1].get("target_width_cm") if b.get("chart") and audits else None
+            r.figure(path, b["caption"], source=b["source"], width_cm=width, max_height_cm=b.get("max_height_cm"))
+        elif ty == "figure_pair":
+            paths = [_resolve_image(it, base, figdir, it.get("id", f"fig{i}_{k}"), audits) for k, it in enumerate(b["items"])]
+            r.figure_pair(paths, [it["caption"] for it in b["items"]], [it["source"] for it in b["items"]])
+        elif ty == "fin_pages":
+            r.begin_columns(b.get("title", "附表：财务报表和主要财务比率"))
+            shared = {}
+            for side in ("left", "right"):
+                if side == "right": r.next_column()
+                for sec in b.get(side, []):
+                    tb = resolve_fin_section(sec, base, meta.get("model"), b["years"], b.get("price"), b.get("shares"), shared)
+                    r.mini_heading(tb["title"], tb.get("unit"))
+                    n = len(tb["headers"]) - 1; lw = b.get("label_width_cm", 2.5)
+                    cw = (r.current_width_cm - lw) / n
+                    r.table(tb["headers"], _table_rows(tb), widths_cm=[lw] + [cw] * n, size=b.get("size", 7.4),
+                            subtotal_rows=tuple(tb["subtotal_rows"]), keep_together=True)
+            r.end_columns()
+            if b.get("source"): r.source(b["source"])
+        elif ty == "valuation_summary":
+            v = load_valuation(spec, base)
+            item = {"wide": True, "chart": {"template": "football_field", "args": {
+                "rows": football_rows(v), "price": cover.get("valuation", {}).get("price"),
+                "target": v["primary"]["target_price"], "unit": b.get("unit", "元/股"), "digits": b.get("digits", 0)}}}
+            path = _resolve_image(item, base, figdir, b.get("id", "valuation_football_field"), audits)
+            r.figure(path, b.get("caption", "估值方法对照：主方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
+                     width_cm=audits[-1].get("target_width_cm"))
+            if b.get("table", True):
+                hd, rows = valuation_table(v, b.get("digits", 0))
+                r.table(hd, rows, caption=b.get("table_caption", "估值方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
+                        widths_cm=b.get("widths", [3.2, 1.8, 4.0, 8.3]), size=b.get("size", 8.4), keep_together=False)
+            if b.get("sanity", True) and v.get("sanity"):
+                rows = [[x["item"], x.get("display", ""), x.get("compare", "—")] for x in v["sanity"]]
+                r.table(["合理性检查", "结果", "参照"], rows, caption=b.get("sanity_caption", "目标价合理性检查"),
+                        source=b.get("source", "估值模型、团队分析"), widths_cm=[6.0, 3.4, 7.9], size=8.4, keep_together=True)
+        elif ty == "page_break": r.page_break()
+        elif ty == "end_appendix": r.end_appendix()
+        else: raise ValueError(f"未知 block 类型：{ty}")
     if spec.get("rating"):
         r.rating_definitions(STOCK_RATINGS, INDUSTRY_RATINGS, RATING_INTRO)
     if spec.get("disclaimer", True):
+        r.contact_line(contact, brand)
         r.disclosure(spec.get("disclaimer_text") or DEFAULT_DISCLAIMER)
     out.parent.mkdir(parents=True, exist_ok=True)
     r.save(out)

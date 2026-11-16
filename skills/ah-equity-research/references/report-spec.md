@@ -48,10 +48,10 @@ python scripts/source_ledger.py support/sources.json --cutoff 2026-09-04 --spec 
 | `cover.performance` / `cover.authors` / `cover.related` | 封面左栏可选栏目：涨跌幅比较表（headers、rows）、研究员（name、contact）、相关研究（标题列表） |
 | `figure_toc` | 默认在目录后生成“图表目录”（Word字段，预览PDF中省略）；`false`关闭 |
 | `rating` | `{"rating","change","target_price","benchmark","benchmark_return","dividend_yield"}`；封面评级框与文末评级说明，规则见rating-system.md；`false`表示不出具评级 |
-| `layout` | 版式：省略为通栏；`{"mode": "figures_left", "left_cm": 7.0, "gap_cm": 0.6, "text_beside_chars": 320}`为左图右文，规则见style-presets.md |
 | `valuation` | 主方法与交叉验证：对象或`"valuation.json"`路径，字段见workflow-stages.md的S3；评级目标价须与`primary.target_price`一致 |
 | `prose_limits` | 行文检查阈值，如`{"lead_chars": 60, "sentence_chars": 110}` |
 | `prose_waivers` | `[{"match": "提示中的关键词", "reason": "保留理由"}]`，S5关卡跳过匹配的行文提示 |
+| `meta.contact` | 研究员联系方式 `{"name","phone","email","title"}`，覆盖config.local.json的`research_contact`；`false`不显示 |
 | `meta.model` | 模型工作簿路径（相对spec），`model_table`默认从这里取数 |
 | `meta.stance` | `cautious` / `positive` / `neutral`；决定风险表必须包含的反向风险（cautious→须有“上行…”行，positive→须有“下行…”行） |
 | `peers` | 同业比较对象列表；少于2家给警告，须在正文说明原因或口径差异 |

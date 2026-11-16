@@ -22,7 +22,7 @@ _PRESETS = {
             "key_fill": "FFFFFF", "zebra": "FFFFFF", "chapter_style": "rule",
             "body_pt": 10.5, "leading_pt": 15.0, "body_after_pt": 4.5,
         },
-        "chart_palette": ["#13294B", "#5C88B5", "#A6A6A6", "#C99A2E"],
+        "chart_palette": ["#13294B", "#5C88B5", "#9FB7CE", "#C99A2E"],
         "chart": {"forecast_mark": "divider", "axis_color": "#8C939B", "range_bar": "#AFC3DA",
                   "price_mark": "#C99A2E", "heat_low": "#BFC3C8"},
     },
