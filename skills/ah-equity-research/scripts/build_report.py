@@ -751,7 +751,11 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
             if b.get("table", True):
                 hd, rows = valuation_table(v, b.get("digits", 0))
                 r.table(hd, rows, caption=b.get("table_caption", "估值方法与交叉验证"), source=b.get("source", "估值模型、团队分析"),
-                        widths_cm=b.get("widths", [3.2, 1.8, 4.0, 8.3]), size=b.get("size", 8.4), keep_together=True)
+                        widths_cm=b.get("widths", [3.2, 1.8, 4.0, 8.3]), size=b.get("size", 8.4), keep_together=False)
+            if b.get("sanity", True) and v.get("sanity"):
+                rows = [[x["item"], x.get("display", ""), x.get("compare", "—")] for x in v["sanity"]]
+                r.table(["合理性检查", "结果", "参照"], rows, caption=b.get("sanity_caption", "目标价合理性检查"),
+                        source=b.get("source", "估值模型、团队分析"), widths_cm=[6.0, 3.4, 7.9], size=8.4, keep_together=True)
         elif ty == "page_break": r.page_break()
         elif ty == "end_appendix": r.end_appendix()
         else: raise ValueError(f"未知 block 类型：{ty}")

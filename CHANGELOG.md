@@ -1,5 +1,11 @@
 # 更新记录
 
+## v2.9.0 · 2026-11-16 · 多方法估值计算器
+- 新增 `scripts/valuation_methods.py`：DCF（WACC×g网格、终值占比）、DDM（两阶段）、可比公司（25/50/75分位、≤0或>100倍记N/M剔除、样本数检查、溢价说明）、SOTP（持股比例、控股折价）、历史倍数带与情景六类计算器。由 `valuation-inputs.json` 生成 `valuation.json`：复算主方法并与模型对照（相差超过1%提示），输出计算明细、目标价合理性检查与提示；可用 `acknowledge` 写明保留提示的理由。
+- 新增 `scripts/fetch_peer_multiples.py`：经 Tushare 取截止日的可比公司 TTM 倍数与公司历史倍数序列。
+- `valuation_summary` 新增“目标价合理性检查”表（终值占企业价值、目标价隐含倍数与可比公司对照、隐含涨跌幅）；S3 关卡拦截计算器报错，提示须写明理由。
+- 新增 `references/valuation-methods.md`：各方法计算口径与检查清单，参考 Anthropic financial-services（Apache-2.0）的 dcf-model、comps-analysis、initiating-coverage 技能改写；保持主方法定目标价、不加权。
+
 ## v2.8.0 · 2026-11-16 · 分步流程、估值框架与行文检查
 - 分步流程：以已有估值模型为起点，按模型盘点 → 研究底稿 → 估值 → 图表 → 成文 → 验收六步执行；新增 `scripts/stage_gate.py` 逐步检查产物，记录文件哈希，上游改动后下游关卡自动失效；验收须绑定最终报告哈希。规范见 `references/workflow-stages.md`。
 - 估值框架：一个主方法给出12个月目标价（写明理由与模型之后的调整项），其他方法只作交叉验证、不加权；偏离目标价超过15%须解释；评级目标价须与主方法一致。新增 `valuation_summary`：足球场图（主方法、交叉验证、股价区间分色，标当前股价与目标价）与方法对照表。

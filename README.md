@@ -6,7 +6,7 @@
 
 面向 **A 股与港股** 的中文研究工作流 · **通用 Agent Skill**（Claude Code · Codex · 其他支持 SKILL.md 的 Agent）
 
-[![Version](https://img.shields.io/badge/version-2.8.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
+[![Version](https://img.shields.io/badge/version-2.9.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](requirements.txt)
 [![Output](https://img.shields.io/badge/output-DOCX%20%2B%20PDF-4C687B?style=flat-square)](#preview)
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
@@ -101,7 +101,7 @@ python -m pip install -r requirements.txt
 
 ### 主方法定目标价，交叉验证查偏差
 
-对标国际大型投行的写法：以一个主估值方法（通常沿用已有模型）给出12个月目标价并说明选择理由，情景分析、可比公司倍数等方法只作交叉验证，不加权平均；偏离目标价超过15%的方法须解释原因。估值章节自动生成足球场图与方法对照表，评级由目标价推出。
+对标国际大型投行的写法：以一个主估值方法（通常沿用已有模型）给出12个月目标价并说明选择理由，情景分析、可比公司倍数等方法只作交叉验证，不加权平均；偏离目标价超过15%的方法须解释原因。内置 DCF、DDM、可比公司（分位数统计、N/M 剔除）、SOTP、历史倍数与情景六类计算器：复算主方法并与模型对照，输出敏感性网格和目标价合理性检查（终值占比、隐含倍数、隐含涨跌幅）；A 股可比公司与历史倍数可经 Tushare 取数。估值章节自动生成足球场图、方法对照表与合理性检查表，评级由目标价推出。
 
 ### 论证与中文表达检查
 
@@ -282,6 +282,10 @@ skills/ah-equity-research/
 
 3. **建模能力集成**：借鉴并集成成熟的 DCF、DDM、三表与可比公司建模方案，适配 A 股与港股口径。
 4. **自动化估值建模**：通过公开信息或用户提供的 API 取数自动搭建模型；关键假设可由用户给定，也可由 AI 提出并标注。
+
+## 致谢
+
+多方法估值的计算流程与检查清单参考了 Anthropic 开源仓库 [financial-services](https://github.com/anthropics/financial-services)（Apache-2.0）中的 dcf-model、comps-analysis 与 initiating-coverage 技能，并按 A 股、港股口径改写；本项目采用主方法定目标价、其他方法交叉验证的写法，不对方法加权。
 
 ## 参与改进
 

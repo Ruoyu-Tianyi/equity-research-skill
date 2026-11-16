@@ -14,7 +14,7 @@ python scripts/stage_gate.py SUPPORT --status            # 查看各阶段状态
 |---|---|---|
 | S1 模型盘点 | `model-map.json`、`mapped-inventory.json` | 写明模型估值方法；映射每股价值（或股权价值+股数）；盘点无错误；模型SHA256未变 |
 | S2 研究底稿 | `research-brief.md` | 七个章节齐全；3–5张论点卡，每张有主张/证据/机制/模型映射/反证/正文落点；证据不只是模型；预期差写明现价隐含什么；自检五问全部为“是” |
-| S3 估值 | `valuation.json` | 一个主方法及选择理由；模型原值与映射一致（误差≤1%）；目标价=模型原值+列明的调整项；交叉验证有依据，偏离目标价超过15%须解释；不加权 |
+| S3 估值 | `valuation-inputs.json`→`valuation.json` | 一个主方法及选择理由；模型原值与映射一致（误差≤1%）；目标价=模型原值+列明的调整项；交叉验证有依据，偏离目标价超过15%须解释；不加权 |
 | S4 图表 | `spec.json`的图表 | 每图有图题、来源与数据；含估值足球场图；章节关联的论点卡在底稿中存在，未展开的论点卡给出提示 |
 | S5 成文 | `spec.json` | `build_report.py`检查无错误；行文检查（见writing-style.md）无未豁免的提示 |
 | S6 验收 | `quality-review.md` | 独立评审总分/平均分、否决项结论、绑定最终文件哈希 |
@@ -32,6 +32,8 @@ python scripts/stage_gate.py SUPPORT --status            # 查看各阶段状态
 按research-brief.md写作。关卡解析的格式：论点卡用`### T1 标题`，字段写成`- 主张：…`；自检五问每行以“——是”或“——否”结尾。
 
 ## S3 估值：主方法加交叉验证
+
+计算由`scripts/valuation_methods.py`完成（DCF、DDM、可比公司、SOTP、历史倍数、情景，计算口径与检查项见 [valuation-methods.md](valuation-methods.md)）：写`valuation-inputs.json`，运行`python scripts/valuation_methods.py valuation-inputs.json --out valuation.json`。脚本复算主方法并与模型对照，输出各方法区间、计算明细、目标价合理性检查和提示；提示中的error项由关卡拦截，确有理由保留的warn项在输入的`acknowledge`中写明理由。
 
 对标国际大型投行的写法：**一个主方法给出12个月目标价，其他方法只作交叉验证，不加权平均**。
 

@@ -179,6 +179,11 @@ def gate_valuation(sup: Path, spec_path: Path) -> Result:
     v = _load(p)
     for level, msg in br.valuation_issues(v):
         (r.err if level == "error" else r.warn)(msg)
+    if v.get("generated_by") != "valuation_methods.py":
+        r.warn("valuation.json 未由 valuation_methods.py 生成：区间与合理性检查未经计算复核")
+    for c in v.get("checks", []):
+        if c.get("level") == "error": r.err(f"{c.get('method')}：{c.get('message')}")
+        elif c.get("level") == "warn": r.warn(f"{c.get('method')}：{c.get('message')}")
     prim = v.get("primary", {})
     mv = mapped_value(sup, "value_per_share")
     if mv is None:
