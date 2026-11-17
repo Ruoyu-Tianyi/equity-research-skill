@@ -33,7 +33,7 @@ python scripts/stage_gate.py SUPPORT --status            # 查看各阶段状态
 
 ## S3 估值：主方法加交叉验证
 
-计算由`scripts/valuation_methods.py`完成（DCF、DDM、可比公司、SOTP、历史倍数、情景，计算口径与检查项见 [valuation-methods.md](valuation-methods.md)）：写`valuation-inputs.json`，运行`python scripts/valuation_methods.py valuation-inputs.json --out valuation.json`。脚本复算主方法并与模型对照，输出各方法区间、计算明细、目标价合理性检查和提示；提示中的error项由关卡拦截，确有理由保留的warn项在输入的`acknowledge`中写明理由。
+先运行`fetch_peer_multiples.py`取可比公司与一致预期数据、`forecast_check.py`检查盈利预测（产物`peers.json`、`consensus.json`、`forecast-checks.json`），再在`valuation-inputs.json`写`profile`做方法选择。计算由`scripts/valuation_methods.py`完成（DCF、DDM、可比公司、SOTP、历史倍数、情景，计算口径与检查项见 [valuation-methods.md](valuation-methods.md)）：写`valuation-inputs.json`，运行`python scripts/valuation_methods.py valuation-inputs.json --out valuation.json`。脚本复算主方法并与模型对照，输出各方法区间、计算明细、目标价合理性检查和提示；提示中的error项由关卡拦截，确有理由保留的warn项在输入的`acknowledge`中写明理由。
 
 对标国际大型投行的写法：**一个主方法给出12个月目标价，其他方法只作交叉验证，不加权平均**。
 

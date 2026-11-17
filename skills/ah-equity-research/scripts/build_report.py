@@ -788,6 +788,28 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
                 rows = [[x["item"], x.get("display", ""), x.get("compare", "—")] for x in v["sanity"]]
                 r.table(["合理性检查", "结果", "参照"], rows, caption=b.get("sanity_caption", "目标价合理性检查"),
                         source=b.get("source", "估值模型、团队分析"), widths_cm=[6.0, 3.4, 7.9], size=8.4, keep_together=True)
+        elif ty == "method_table":       # method applicability (valuation_methods.select_methods)
+            v = load_valuation(spec, base); sel = (v or {}).get("method_selection")
+            if sel:
+                used = {sel["primary"]: "主方法"}
+                for c in v.get("cross_checks", []):
+                    if c.get("key"): used[c["key"]] = "交叉验证" if c.get("role", "cross_check") == "cross_check" else "参考"
+                lv = {"high": "高", "medium": "中", "low": "低"}
+                rows = [[m["method"], lv[m["applicability"]], m["reason"], used.get(k, "未采用")] for k, m in sel["methods"].items()]
+                rows.sort(key=lambda x: ("高中低".index(x[1]), x[0]))
+                r.table(["估值方法", "适用性", "判断依据", "本报告用法"], rows, caption=b.get("caption", "估值方法适用性评估"),
+                        source=b.get("source", "团队分析"), widths_cm=b.get("widths", [3.4, 1.4, 9.7, 2.6]), size=b.get("size", 8.2))
+        elif ty == "comps_table":        # peer sample behind a comps cross-check
+            v = load_valuation(spec, base)
+            cc = next((c for c in (v or {}).get("cross_checks", []) if c.get("calc") == "comps" and (not b.get("method") or c["method"] == b["method"])), None)
+            if cc:
+                det = cc["detail"]; why = {e["name"]: e["reason"] for e in det.get("excluded", [])}
+                f = lambda x, d=1: "—" if x is None else f"{x:,.{d}f}"
+                rows = [[p_["name"], f(p_.get("market_cap"), 0), f(p_.get("multiple")), f(p_.get("growth")), f(p_.get("gross_margin")),
+                         "纳入" if p_.get("included") else why.get(p_["name"], "未纳入")] for p_ in det["peers"]]
+                r.table(["公司", "市值（亿元）", b.get("multiple_label", det["multiple"]), "收入增速（%）", "毛利率（%）", "样本处理"], rows,
+                        caption=b.get("caption", "可比公司估值"), source=b.get("source", "Tushare、团队分析"),
+                        widths_cm=b.get("widths", [2.6, 2.0, 2.0, 2.2, 2.0, 6.3]), size=b.get("size", 8.0))
         elif ty == "page_break": r.page_break()
         elif ty == "end_appendix": r.end_appendix()
         else: raise ValueError(f"未知 block 类型：{ty}")

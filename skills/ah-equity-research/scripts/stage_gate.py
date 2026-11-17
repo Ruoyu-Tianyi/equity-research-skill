@@ -184,6 +184,14 @@ def gate_valuation(sup: Path, spec_path: Path) -> Result:
     for c in v.get("checks", []):
         if c.get("level") == "error": r.err(f"{c.get('method')}：{c.get('message')}")
         elif c.get("level") == "warn": r.warn(f"{c.get('method')}：{c.get('message')}")
+    if not v.get("method_selection"):
+        r.warn("valuation-inputs 未提供 profile：方法适用性未经评估（valuation_methods.select_methods）")
+    fc = sup / "forecast-checks.json"; r.use(fc)
+    if not fc.exists():
+        r.warn("缺少 forecast-checks.json：预测未与一致预期、季度进度和增速收敛做对照（forecast_check.py）")
+    else:
+        for c in _load(fc).get("checks", []):
+            if c.get("level") == "warn" and not c.get("reason"): r.warn(f"预测检查：{c['message']}")
     prim = v.get("primary", {})
     mv = mapped_value(sup, "value_per_share")
     if mv is None:

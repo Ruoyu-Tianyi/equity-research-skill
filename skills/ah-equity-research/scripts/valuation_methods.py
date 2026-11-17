@@ -107,30 +107,121 @@ def calc_ddm(m, ctx):
     return (min(vals), run(m["ke"], m["g"]), max(vals)), {"grid": {"ke": kr, "g": gr, "per_share": mat}}, []
 
 
+def screen_peers(peers, screen):
+    """Apply an explicit, documented screen. Returns (kept, excluded[(peer, reason)]).
+    screen: {"growth_min": 20, "growth_key": "revenue_growth_fy2", "gm_min": 25, "exclude": {"name": "reason"}}"""
+    screen = screen or {}; kept, out = [], []
+    gk = screen.get("growth_key", "revenue_growth_fy2")
+    for p in peers:
+        why = (screen.get("exclude") or {}).get(p.get("name"))
+        g = p.get(gk); gm = p.get("gross_margin")
+        if why: pass
+        elif screen.get("growth_min") is not None and (g is None or g < screen["growth_min"]):
+            why = f"收入增速{'—' if g is None else f'{g:.0f}%'}低于筛选线{screen['growth_min']}%"
+        elif screen.get("gm_min") is not None and (gm is None or gm < screen["gm_min"]):
+            why = f"毛利率{'—' if gm is None else f'{gm:.0f}%'}低于筛选线{screen['gm_min']}%"
+        (out.append((p, why)) if why else kept.append(p))
+    return kept, out
+
+
 def calc_comps(m, ctx):
+    """Comparable companies. mode: plain (multiple quartiles x metric), growth_adjusted (multiple/growth quartiles
+    x target growth x metric, e.g. PEG or growth-adjusted P/S). Peers pass an explicit screen first; with 6+ peers,
+    multiples outside 1.5 IQR are flagged as outliers and excluded. Quartiles use the screened sample only."""
     shares, nc = m.get("shares", ctx["shares"]), m.get("net_cash", ctx.get("net_cash", 0.0))
-    cap = m.get("nm_cap", NM_CAP)
-    valid, excluded = [], []
-    for p in m["peers"]:
+    cap = m.get("nm_cap", NM_CAP); mode = m.get("mode", "plain")
+    peers, excl = screen_peers(m["peers"], m.get("screen"))
+    excluded = [(p.get("name"), why) for p, why in excl]
+    valid = []
+    for p in peers:
         x = p.get("multiple")
-        (valid if isinstance(x, (int, float)) and 0 < x <= cap else excluded).append(p)
-    xs = [p["multiple"] for p in valid]
-    st = stats(xs); checks = []
+        if not (isinstance(x, (int, float)) and 0 < x <= cap):
+            excluded.append((p.get("name"), "倍数≤0或>100倍（N/M）")); continue
+        if mode == "growth_adjusted":
+            g = p.get("growth")
+            if not g or g <= 0: excluded.append((p.get("name"), "缺少正的增速，无法做增长调整")); continue
+            p = {**p, "adj": x / g}
+        valid.append(p)
+    key = "adj" if mode == "growth_adjusted" else "multiple"
+    xs = [p[key] for p in valid]; checks = []
+    if len(xs) >= 6:
+        q1, q3 = percentile(xs, 25), percentile(xs, 75); lo, hi = q1 - 1.5 * (q3 - q1), q3 + 1.5 * (q3 - q1)
+        out = [p for p in valid if not lo <= p[key] <= hi]
+        for p in out: excluded.append((p.get("name"), "离群值（超出四分位距1.5倍）"))
+        valid = [p for p in valid if lo <= p[key] <= hi]; xs = [p[key] for p in valid]
+    st = stats(xs)
     if st["n"] < 3:
-        checks.append(_chk("error", f"有效可比公司{st['n']}家，少于3家，不足以形成区间；改用其他方法或扩大样本并说明可比性"))
-        return None, {"stats": st, "excluded": [p.get("name") for p in excluded]}, checks
-    if st["n"] < 5: checks.append(_chk("warn", f"有效可比公司{st['n']}家（建议5–10家），在依据中说明样本限制"))
-    if excluded: checks.append(_chk("info", "剔除N/M样本：" + "、".join(str(p.get("name")) for p in excluded)))
+        checks.append(_chk("error", f"筛选后有效可比公司{st['n']}家，少于3家，不足以形成区间；改用其他方法或调整样本并说明可比性"))
+        return None, {"stats": st, "excluded": excluded}, checks
+    if st["n"] < 5: checks.append(_chk("warn", f"筛选后有效可比公司{st['n']}家（建议5–10家），在依据中说明样本限制"))
     lo_q, hi_q = m.get("quantiles", [25, 75])
+    tg = m.get("target_growth")
+    if mode == "growth_adjusted" and not tg:
+        return None, {}, [_chk("error", "growth_adjusted 需要 target_growth（目标公司对应期间的增速，%）")]
+    to_mult = (lambda a: a * tg) if mode == "growth_adjusted" else (lambda a: a)
     to_ps = lambda mult: (mult * m["target_metric"] + (nc if m.get("kind") == "ev" else 0.0)) / shares
-    row = (to_ps(percentile(xs, lo_q)), to_ps(st["median"]), to_ps(percentile(xs, hi_q)))
+    qs = (percentile(xs, lo_q), st["median"], percentile(xs, hi_q))
+    row = tuple(to_ps(to_mult(q)) for q in qs)
     prem = m.get("premium")
     if prem: row = tuple(v * (1 + prem) for v in row)
-    detail = {"multiple": m["multiple"], "stats": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in st.items()},
-              "peers": [{"name": p.get("name"), "multiple": p.get("multiple")} for p in m["peers"]],
-              "excluded": [p.get("name") for p in excluded], "target_metric": m["target_metric"],
-              "metric_label": m.get("metric_label"), "premium": prem}
+    if mode == "growth_adjusted":   # comparability: target growth far outside the peer range weakens the method
+        gs = [p["growth"] for p in valid]
+        if tg > 2 * max(gs) or tg < .5 * min(gs):
+            checks.append(_chk("warn", f"目标公司增速{tg:.0f}%超出可比公司增速范围{min(gs):.0f}%–{max(gs):.0f}%较多，增长调整的外推可靠性下降"))
+    detail = {"multiple": m["multiple"], "mode": mode, "target_growth": tg,
+              "implied_multiple": [round(to_mult(q), 2) for q in qs],
+              "stats": {k: (round(v, 3) if isinstance(v, float) else v) for k, v in st.items()},
+              "peers": [{"name": p.get("name"), "multiple": p.get("multiple"), "growth": p.get("growth"),
+                         "gross_margin": p.get("gross_margin"), "market_cap": p.get("market_cap"),
+                         "included": any(v.get("name") == p.get("name") for v in valid)} for p in m["peers"]],
+              "excluded": [{"name": n, "reason": r} for n, r in excluded],
+              "target_metric": m["target_metric"], "metric_label": m.get("metric_label"), "premium": prem}
     return row, detail, checks
+
+
+# ---------- method selection ----------
+METHOD_LABELS = {"dcf": "DCF", "ddm": "DDM", "pe": "市盈率", "peg": "增长调整市盈率（PEG）", "ps": "市销率",
+                 "ps_growth": "增长调整市销率", "ev_ebitda": "EV/EBITDA", "pb": "市净率", "pb_roe": "P/B-ROE",
+                 "sotp": "分部估值", "history": "历史估值区间", "scenario": "情景分析"}
+
+
+def select_methods(pf: dict) -> dict:
+    """Score each method's applicability for the company profile (high / medium / low) with a reason.
+
+    profile keys: financial, cyclical, asset_heavy, segments, profitable_fy2, pe_fy2, revenue_growth (FY2, %),
+    payout (%), listed_days, gross_margin (%), peer_gross_margin (%), comps_n, has_scenarios.
+    The primary method is the best-scoring intrinsic method; multiples stay cross-checks."""
+    g = pf.get("revenue_growth") or 0; pe = pf.get("pe_fy2"); prof = pf.get("profitable_fy2", True)
+    fin, segs = pf.get("financial"), pf.get("segments", 1); payout = pf.get("payout", 0) or 0
+    gm, pgm, n = pf.get("gross_margin"), pf.get("peer_gross_margin"), pf.get("comps_n", 0)
+    r = {}
+    def put(k, level, why): r[k] = {"method": METHOD_LABELS[k], "applicability": level, "reason": why}
+    put("dcf", "low" if fin else "high" if (g >= 15 or not prof) else "medium",
+        "金融企业的现金流口径不适用" if fin else "高成长或尚未稳定盈利，价值集中在远期现金流，需显式预测" if g >= 15 or not prof else "盈利稳定，可作主方法或交叉验证")
+    put("ddm", "high" if (fin or payout >= 40) else "low", "分红稳定、可预测" if (fin or payout >= 40) else f"分红率{payout:.0f}%，股利不反映价值")
+    pe_ok = prof and pe is not None and 0 < pe <= 60
+    put("pe", "high" if pe_ok and g < 25 else "medium" if pe_ok else "low",
+        "盈利稳定、倍数有意义" if pe_ok else "亏损或预测年市盈率过高（>60倍），倍数被增速主导，直接比较失真")
+    put("peg", "medium" if (prof and g >= 20 and n >= 3) else "low",
+        "盈利为正且高增长，用增速调整后与同业比较" if (prof and g >= 20 and n >= 3) else "需盈利为正、增速≥20%且有3家以上可比公司")
+    margin_gap = gm is not None and pgm is not None and gm - pgm > 15
+    put("ps", "low" if (prof and (margin_gap or g >= 30)) else "medium",
+        "公司盈利且毛利率显著高于同业或增速远高于同业，按收入倍数比较会低估" if (prof and (margin_gap or g >= 30)) else "亏损或利润失真时作为收入端参照")
+    put("ps_growth", "medium" if (g >= 20 and n >= 3 and not margin_gap) else "low",
+        "高增长且同业毛利率接近，可用增长调整市销率" if (g >= 20 and n >= 3 and not margin_gap) else "毛利率差异大或样本不足，收入倍数不可比")
+    put("ev_ebitda", "high" if (pf.get("asset_heavy") or pf.get("cyclical")) and prof else "low",
+        "重资产或周期企业，剔除折旧与资本结构差异" if (pf.get("asset_heavy") or pf.get("cyclical")) and prof else "轻资产高成长企业，EBITDA处于爬坡期")
+    put("pb", "high" if fin else "low", "金融企业以净资产为价值基础" if fin else "轻资产企业，账面净资产（含募资现金）不反映盈利能力")
+    put("pb_roe", "high" if fin else "low", "银行保险的核心方法" if fin else "非金融企业不适用")
+    put("sotp", "high" if segs >= 2 else "low", "多业务、经济属性不同" if segs >= 2 else "单一业务，无需分部加总")
+    put("history", "medium" if (pf.get("listed_days") or 0) >= 750 else "low",
+        "上市满三年，可参考自身估值区间" if (pf.get("listed_days") or 0) >= 750 else "上市不足三年，历史区间样本不足")
+    put("scenario", "medium" if pf.get("has_scenarios", True) else "low", "检验主方法对关键假设的敏感程度")
+    order = {"high": 2, "medium": 1, "low": 0}
+    intrinsic = ["pb_roe", "ddm", "dcf", "sotp", "pe"] if fin else ["sotp", "dcf", "ddm", "pe", "ev_ebitda"]
+    primary = max(intrinsic, key=lambda k: (order[r[k]["applicability"]], -intrinsic.index(k)))
+    cross = [k for k, v in r.items() if k != primary and v["applicability"] != "low"]
+    return {"primary": primary, "cross_checks": cross, "methods": r}
 
 
 def calc_sotp(m, ctx):
@@ -197,18 +288,35 @@ def build(inp: dict, base: Path | None = None) -> dict:
         c = dict(c); calc = c.pop("calc", "manual")
         if calc == "comps" and isinstance(c.get("peers"), str) and base is not None:   # peers.json from fetch_peer_multiples.py
             src = json.loads((base / c["peers"]).read_text(encoding="utf-8"))
-            c["peers"] = [{"name": x["name"], "multiple": (x.get("multiples") or {}).get(c["multiple"])} for x in src.get("peers", [])]
+            gk = c.get("growth_field", "revenue_growth_fy2")
+            c["peers"] = [{"name": x["name"], "multiple": (x.get("multiples") or {}).get(c["multiple"]),
+                           "growth": x.get(gk), "revenue_growth_fy2": x.get("revenue_growth_fy2"),
+                           "gross_margin": x.get("gross_margin"), "market_cap": x.get("market_cap")}
+                          for x in src.get("peers", []) if not x.get("error")]
         if calc == "history" and isinstance(c.get("series"), str) and base is not None:
             src = json.loads((base / c["series"]).read_text(encoding="utf-8"))
             c["series"] = src["history"][c["multiple"]]
         rng, detail, ck = CALCS[calc](c, ctx)
         checks += [{**x, "method": c["method"]} for x in ck]
         if rng is None: continue
-        row = {k: c[k] for k in ("method", "label", "basis", "explanation", "role") if k in c}
+        row = {k: c[k] for k in ("method", "label", "basis", "explanation", "role", "key") if k in c}
         row.update({"low": round(min(rng[0], rng[2]), 2), "high": round(max(rng[0], rng[2]), 2),
                     "base": None if rng[1] is None else round(rng[1], 2), "calc": calc, "detail": detail})
         ccs.append(row)
+    sel = select_methods(inp["profile"]) if inp.get("profile") else None
+    if sel:   # a cross-check the profile rates "low" must not sit beside the primary as if it were comparable
+        for c in ccs:
+            k = c.get("key"); m_ = sel["methods"].get(k) if k else None
+            if m_ and m_["applicability"] == "low" and c.get("role", "cross_check") == "cross_check":
+                checks.append({"level": "error", "method": c["method"],
+                               "message": f"按公司特征该方法适用性低：{m_['reason']}；改用适用的方法，或设为 role: reference 并写明 explanation"})
+            if k: c["applicability"] = m_["applicability"] if m_ else None
+        k0 = inp["primary"].get("key")
+        if k0 and k0 != sel["primary"] and not inp["primary"].get("override_reason"):
+            checks.append({"level": "warn", "method": prim["method"],
+                           "message": f"方法选择建议以{METHOD_LABELS[sel['primary']]}为主方法；沿用模型方法时写 override_reason"})
     out = {"primary": prim, "cross_checks": ccs}
+    if sel: out["method_selection"] = sel
     tr = inp.get("trading_range")
     if isinstance(tr, str) and base is not None:
         m = json.loads((base / tr).read_text(encoding="utf-8"))

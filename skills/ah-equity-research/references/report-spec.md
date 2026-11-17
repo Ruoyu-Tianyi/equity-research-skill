@@ -70,6 +70,8 @@ python scripts/source_ledger.py support/sources.json --cutoff 2026-09-04 --spec 
 | `figure_pair` | items:[两个figure] | 双图半栏，各自标题与来源 |
 | `model_table` | sheet, header_row, years, rows:[{label,row,scale}], caption, source, widths?, digits?, row_digits?, percent_rows?, subtotal_rows?, workbook? | 从模型按**年份表头**定位列再取数；不存在的年份报错；单元格坐标写入manifest（support），不进成稿。来自Excel的表格一律使用它 |
 | `valuation_summary` | caption, table, sanity, digits, source | 估值足球场图（主方法深色、交叉验证浅色、股价区间灰色，标当前股价与目标价）＋“目标价合理性检查”表（valuation.json含sanity时；`sanity: false`关闭）＋“估值方法与交叉验证”表；需设置`valuation` |
+| `method_table` | caption, source | 估值方法适用性评估表（方法、高/中/低、判断依据、本报告用法），数据来自valuation.json的method_selection |
+| `comps_table` | caption, method, multiple_label, source | 可比公司表（市值、倍数、增速、毛利率、纳入或剔除理由），数据来自对应comps交叉验证 |
 | `fin_pages` | title, years, price, shares, left:[sections], right:[sections], source | 整页双栏“财务报表和主要财务比率”。section：`{title, unit, sheet, header_row, rows}`；rows读取`{label,row,key,scale,blank_zero}`（blank_zero：0显示为“—”）或派生`{label,op,of,over|plus,key,pct,digits,show}`，op为growth（基期≤0时为空）、ratio、ratio_avg（如ROE）、per_share、price_over（P/E等，>100倍或≤0显示N/M）、neg、add；`{label, header:true}`为分组小标题；key在整个fin_pages内共享 |
 | `page_break` / `end_appendix` | — | 分页、退出附录模式 |
 

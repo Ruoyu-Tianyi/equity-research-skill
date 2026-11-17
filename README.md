@@ -6,7 +6,7 @@
 
 面向 **A 股与港股** 的中文研究工作流 · **通用 Agent Skill**（Claude Code · Codex · 其他支持 SKILL.md 的 Agent）
 
-[![Version](https://img.shields.io/badge/version-2.12.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
+[![Version](https://img.shields.io/badge/version-2.13.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](requirements.txt)
 [![Output](https://img.shields.io/badge/output-DOCX%20%2B%20PDF-4C687B?style=flat-square)](#preview)
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
@@ -102,6 +102,10 @@ python -m pip install -r requirements.txt
 ### 主方法定目标价，交叉验证查偏差
 
 对标国际大型投行的写法：以一个主估值方法（通常沿用已有模型）给出12个月目标价并说明选择理由，情景分析、可比公司倍数等方法只作交叉验证，不加权平均；偏离目标价超过15%的方法须解释原因。内置 DCF、DDM、可比公司（分位数统计、N/M 剔除）、SOTP、历史倍数与情景六类计算器：复算主方法并与模型对照，输出敏感性网格和目标价合理性检查（终值占比、隐含倍数、隐含涨跌幅）；A 股可比公司与历史倍数可经 Tushare 取数。估值章节自动生成足球场图、方法对照表与合理性检查表，评级由目标价推出。
+
+### 按公司特征选方法，用截止日数据做可比
+
+估值前按公司特征（成长阶段、盈利与市盈率、分红、业务分部、上市时间、与同业的毛利率差距）评估每种方法的适用性，自动建议主方法，并拦截不适用的交叉验证（例如高毛利成长股用市销率、轻资产公司用市净率）。可比公司经 Tushare 取截止日倍数与卖方一致预期，按写明的筛选线与剔除理由成样，高成长公司用增长调整倍数（如 PEG）。盈利预测在写作前与一致预期、季度进度和增速收敛对照。没有模型或需要独立复核时，可按驱动假设生成带公式的三张表与 DCF 模型（Excel，含情景开关与平衡检查）。
 
 ### 论证与中文表达检查
 
@@ -275,11 +279,11 @@ skills/ah-equity-research/
 
 ## 发展路线
 
-已完成：分步流程与阶段关卡、论证与中文表达检查、主方法加交叉验证的估值框架与计算器（v2.8–v2.9），图表与版面美观优化、附录研究补充（v2.11–v2.12）。
+已完成：分步流程与阶段关卡、论证与中文表达检查、主方法加交叉验证的估值框架与计算器（v2.8–v2.9），图表与版面美观优化、附录研究补充（v2.11–v2.12），方法适用性评估、可比公司与一致预期取数、预测检查与三张表建模（v2.13）。
 
 **远期**
 
-1. **建模能力集成**：借鉴并集成成熟的 DCF、DDM、三表与可比公司建模方案，适配 A 股与港股口径。
+1. **建模能力深化**：在已集成的三张表与 DCF 建模基础上，增加分业务量价驱动、营运资本周转天数与债务计划，以及港股同业的取数。
 2. **自动化估值建模**：通过公开信息或用户提供的 API 取数自动搭建模型；关键假设可由用户给定，也可由 AI 提出并标注。
 3. **机构模板适配**（按需启动）：识别用户提供的模板、往期报告或品牌手册，沿用其 logo、版式规范、字体规范与配色。
 

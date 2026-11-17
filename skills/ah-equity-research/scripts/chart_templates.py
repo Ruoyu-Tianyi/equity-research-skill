@@ -655,8 +655,24 @@ def share_area(stem, categories, series: dict, *, wide=False, height_cm=5.8, dig
     return _save(fig, stem, wide)
 
 
+def consensus_range(stem, years, low, median, high, model, *, unit="亿元", wide=False, height_cm=5.6, digits=1,
+                    names=("一致预期区间", "一致预期中位数", "本报告预测")):
+    """Sell-side forecast range per year (min-max bar, median tick) with this report's forecast as a dot."""
+    fig, ax = _fig(wide, height_cm); x = list(range(len(years)))
+    rng = _chart_opt("range_bar", cs.PALETTE[2])
+    for i, lo, md, hi, m_ in zip(x, low, median, high, model):
+        ax.bar(i, hi - lo, bottom=lo, width=.34, color=rng, zorder=2, label=names[0] if i == 0 else None, linewidth=0)
+        ax.plot([i - .17, i + .17], [md, md], color=cs.PALETTE[1], lw=2, zorder=3, label=names[1] if i == 0 else None)
+        ax.plot([i], [m_], marker="D", ms=5.5, color=cs.PALETTE[0], mec="white", mew=.9, ls="none", zorder=4,
+                label=names[2] if i == 0 else None)
+        ax.text(i + .24, m_, _fmt(m_, digits), va="center", fontsize=7.8, color=cs.PALETTE[0], fontweight="bold")
+    ax.set_xticks(x, years); cs.style(ax, unit); cs.legend(ax, ncol=3)
+    ax.set_xlim(-.6, len(x) - .2)
+    return _save(fig, stem, wide)
+
+
 TEMPLATES = {"bar": bar, "line": line, "waterfall": waterfall, "heatmap": heatmap,
              "football_field": football_field, "scatter": scatter, "price_sparkline": price_sparkline,
              "price_area": price_area, "combo": combo, "donut": donut, "area": area, "dumbbell": dumbbell,
              "treemap": treemap, "butterfly": butterfly, "slope": slope, "marimekko": marimekko,
-             "fan": fan, "share_area": share_area}
+             "fan": fan, "share_area": share_area, "consensus_range": consensus_range}

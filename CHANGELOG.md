@@ -1,5 +1,11 @@
 # 更新记录
 
+## v2.13.0 · 2026-11-17 · 估值方法选择、可比与一致预期、预测检查、三张表建模
+- 方法选择：`valuation_methods.select_methods` 按公司特征给出各方法高/中/低适用性与理由，建议主方法；交叉验证用了适用性低的方法时报错。新增 `method_table`。
+- 可比公司：`fetch_peer_multiples.py` 取截止日 TTM 与预测年倍数（卖方一致预期中位数）、收入增速与毛利率；`comps` 支持写明的筛选线与逐家剔除理由、四分位距离群值剔除、增长调整倍数（PEG 等）及外推提示。新增 `comps_table`。
+- 一致预期与预测检查：`fetch_peer_multiples.py --consensus` 取目标公司分年度一致预期；`forecast_check.py` 对照一致预期、隐含四季度、增长断档；新增 `consensus_range` 图；S3 关卡读取预测检查。
+- 建模：`model_builder.py` 按驱动假设生成带公式的三张表与 DCF Excel（情景开关、敏感性、平衡与现金勾稽检查），Python 结果与 Excel 重算一致。参考 Anthropic financial-services 的 3-statement-model、dcf-model、comps-analysis 技能。
+
 ## v2.12.0 · 2026-11-16 · 附录研究补充与图表艺术性
 - 附录新增“研究补充”分组规范：研究过程中有价值但正文未用的数据与图表放入附录（长期经营路径、情景与敏感性、现金流与成本结构、市场与同业），表现力图表可多用；分组须先有一两句说明，否则提示。
 - 新图表：`fan`情景扇形图（中性路径+分级色带+三端标签）、`share_area`百分比面积图（结构演变，右侧标注占比）。
