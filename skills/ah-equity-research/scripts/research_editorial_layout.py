@@ -493,7 +493,8 @@ class ResearchEditorialLayout:
         if title:
             self._columns([self.full_width_cm], 0, WD_SECTION_START.NEW_PAGE)
             if heading:
-                self.heading(title, 2)
+                if isinstance(heading, tuple): self.appendix_section(*heading)
+                else: self.heading(title, 2)
             else:
                 h = self.doc.add_paragraph(); h.paragraph_format.space_after = Pt(6)
                 h.paragraph_format.line_spacing = Pt(20); _border(h, 'bottom', self.theme.navy, 10, 3)
@@ -971,6 +972,33 @@ class ResearchEditorialLayout:
             self.manifest['figures'].append({'number':self.figure_count,'caption':captions[k],'path':str(paths[k]),'layout':'pair','internal_note':notes[k] if notes else None})
         p = self.doc.add_paragraph(); p.paragraph_format.line_spacing = Pt(1); p.paragraph_format.space_after = Pt(2)
         return nums
+
+    # ---- appendix sections ----
+    def appendix_section(self, number, title, new_page=False):
+        """Numbered appendix section: a pale band with a navy left rule, gold '附录 N' and the navy title.
+        Kept as a level-2 heading so it is listed in the table of contents (paragraph shading and borders
+        are not copied into TOC entries, so the band never leaks into the contents page)."""
+        t = self.theme
+        p = self.heading(f'附录{number}　{title}', 2, page_break=new_page)
+        for run in list(p.runs): run._r.getparent().remove(run._r)
+        _font(p.add_run(f'附录 {number}'), 11.5, t.gold, True, t.heading_east_asia, t.latin)
+        _font(p.add_run('　'), 11.5, t.navy, True, t.heading_east_asia, t.latin)
+        _font(p.add_run(title), 11.5, t.navy, True, t.heading_east_asia, t.latin)
+        _panel(p, t.pale, t.navy)
+        pf = p.paragraph_format
+        pf.space_before = Pt(16); pf.space_after = Pt(6); pf.line_spacing = Pt(21); pf.keep_with_next = True
+        return p
+
+    def appendix_lead(self, text):
+        """The one- or two-sentence guide that opens an appendix section: smaller muted type under a thin
+        steel rule on the left, kept with the exhibit that follows."""
+        t = self.theme
+        q = self.doc.add_paragraph(); pf = q.paragraph_format
+        pf.left_indent = Cm(.25); pf.first_line_indent = Cm(0); pf.space_after = Pt(6)
+        pf.line_spacing = Pt(14); pf.keep_with_next = True
+        _border(q, 'left', t.slate, 8, 6)
+        _font(q.add_run(text), 9.2, t.muted, False, t.body_east_asia)
+        return q
 
     def page_break(self):
         """Use for an explicit part break, never after every small subsection."""

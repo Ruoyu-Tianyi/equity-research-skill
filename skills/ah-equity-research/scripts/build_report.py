@@ -741,9 +741,12 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
         if spec.get("reading_note"): r.paragraph(spec["reading_note"], size=8, color=t.muted)
     # ---- body ----
     chapter = 0; first = True
-    numbered = spec.get("appendix_numbering", True); in_app = False; appx = 0
+    numbered = spec.get("appendix_numbering", True); in_app = False; appx = 0; app_lead = False
+    body_ = spec.get("body", [])
+    EXHIBITS = ("figure", "figure_pair", "table", "method_table", "comps_table", "valuation_summary")
     for i, b in enumerate(spec.get("body", [])):
         ty = b["type"]
+        if ty not in ("p", "h2"): app_lead = False
         if ty == "h1":
             if b.get("appendix"):
                 in_app = True
@@ -755,9 +758,17 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
             first = False
         elif ty == "h2":
             if in_app and numbered:          # appendix sections: 附录1：…, 附录2：… (financial statements included)
-                appx += 1; r.subheading(f"附录{appx}：{appendix_title(b['text'])}")
+                appx += 1; r.appendix_section(appx, appendix_title(b["text"])); app_lead = True
             else: r.subheading(b["text"])
         elif ty == "h3": r.h3(b["text"])
+        elif ty == "p" and in_app:
+            nxt = body_[i + 1]["type"] if i + 1 < len(body_) else None
+            if app_lead and numbered:       # first paragraph of an appendix section: guide line
+                r.appendix_lead(b["text"])
+            else:                            # keep text with the exhibit it introduces
+                r.paragraph(b["text"], lead=b.get("lead", _lead(b["text"]) if b.get("auto_lead", True) else None),
+                            keep_next=nxt in EXHIBITS, size=spec.get("appendix_body_pt", 9.5))
+            app_lead = False
         elif ty == "p":
             r.paragraph(b["text"], lead=b.get("lead", _lead(b["text"]) if b.get("auto_lead", True) else None))
         elif ty == "table":
@@ -773,8 +784,10 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
             r.figure_pair(paths, [it["caption"] for it in b["items"]], [it["source"] for it in b["items"]])
         elif ty == "fin_pages":
             ft = appendix_title(b.get("title", "财务报表和主要财务比率"))
-            if in_app and numbered: appx += 1; ft = f"附录{appx}：{ft}"
-            r.begin_columns(ft, heading=in_app and numbered)
+            if in_app and numbered:
+                appx += 1; r.begin_columns(ft, heading=(appx, ft))
+            else:
+                r.begin_columns(ft)
             shared = {}
             for side in ("left", "right"):
                 if side == "right": r.next_column()

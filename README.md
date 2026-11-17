@@ -6,7 +6,7 @@
 
 面向 **A 股与港股** 的中文研究工作流 · **通用 Agent Skill**（Claude Code · Codex · 其他支持 SKILL.md 的 Agent）
 
-[![Version](https://img.shields.io/badge/version-2.14.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
+[![Version](https://img.shields.io/badge/version-2.15.0-24445C?style=flat-square)](skills/ah-equity-research/SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](requirements.txt)
 [![Output](https://img.shields.io/badge/output-DOCX%20%2B%20PDF-4C687B?style=flat-square)](#preview)
 [![Styles](https://img.shields.io/badge/design-6%20themes-7F9B88?style=flat-square)](#design)
@@ -125,7 +125,7 @@ python -m pip install -r requirements.txt
 
 ### 有表现力的图表，克制的配色
 
-新增矩形树图（收入结构）、背靠背条形图（两家公司多指标对比，单位不混轴）、斜率图（两期变化）、马赛克图（细分市场规模×厂商份额）、情景扇形图（乐观/中性/悲观路径与分级色带）与百分比面积图（结构演变）。坐标轴采用编辑式风格：三边无框、点状细网格、灰色刻度，单系列柱体带柔和渐变，长时间轴自动抽稀标签。附录与附表合并为一章，按“附录1、附录2……”编号成节并进入目录，收纳经营假设、一致预期对照、长期路径与情景、估值敏感性、可比公司、市场表现，以及作为最后一节的财务报表和主要财务比率。机构研究配色为海军蓝、钢蓝、浅钢蓝与琥珀强调；柱体更细，分组柱留细缝，多系列预测柱用细斜纹标注而不变色。生成前提示表格与正文的平衡：小表改写成正文或图、标题后先给判断、相邻表格须有衔接。
+新增矩形树图（收入结构）、背靠背条形图（两家公司多指标对比，单位不混轴）、斜率图（两期变化）、马赛克图（细分市场规模×厂商份额）、情景扇形图（乐观/中性/悲观路径与分级色带）与百分比面积图（结构演变）。坐标轴采用编辑式风格：三边无框、点状细网格、灰色刻度，单系列柱体带柔和渐变，长时间轴自动抽稀标签。附录与附表合并为一章，按“附录1、附录2……”编号成节并进入目录，收纳经营假设、一致预期对照、长期路径与情景、估值敏感性、可比公司、市场表现，以及作为最后一节的财务报表和主要财务比率；每节以浅底标题带开头、首段为引导语，说明文字与图表同页。机构研究配色为海军蓝、钢蓝、浅钢蓝与琥珀强调；柱体更细，分组柱留细缝，多系列预测柱用细斜纹标注而不变色。生成前提示表格与正文的平衡：小表改写成正文或图、标题后先给判断、相邻表格须有衔接。
 
 ### 让正文易读，让附录可查
 
