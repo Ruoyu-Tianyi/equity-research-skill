@@ -62,7 +62,7 @@ python scripts/source_ledger.py support/sources.json --cutoff 2026-09-04 --spec 
 
 | type | 字段 | 说明 |
 |---|---|---|
-| `h1` | text, theses, number?, page_break?, appendix? | 章节；`theses`列出对应论点卡ID（未关联会警告）；`appendix: true`进入附录简化层级 |
+| `h1` | text, theses, number?, page_break?, appendix? | 章节；`theses`列出对应论点卡ID（未关联会警告）；`appendix: true`进入附录简化层级，标题写“附录”；其后的`h2`自动编号为“附录1：…”“附录2：…”（`appendix_numbering: false`关闭），fin_pages计入编号 |
 | `h2` / `h3` | text | 小节 |
 | `p` | text, lead?, auto_lead? | 段落；默认把第一句（到“。/；”）作为加粗段首判断，附录引导句设`auto_lead: false` |
 | `table` | headers, rows, caption, source, widths?, digits?, row_digits?, multiple_rows?, percent_rows?, subtotal_rows?, size?, keep_together? | 数值传数字，由脚本格式化；`multiple_rows`中≤0或>100的倍数显示N/M |
@@ -72,7 +72,7 @@ python scripts/source_ledger.py support/sources.json --cutoff 2026-09-04 --spec 
 | `valuation_summary` | caption, table, sanity, digits, source | 估值足球场图（主方法深色、交叉验证浅色、股价区间灰色，标当前股价与目标价）＋“目标价合理性检查”表（valuation.json含sanity时；`sanity: false`关闭）＋“估值方法与交叉验证”表；需设置`valuation` |
 | `method_table` | caption, source | 估值方法适用性评估表（方法、高/中/低、判断依据、本报告用法），数据来自valuation.json的method_selection |
 | `comps_table` | caption, method, multiple_label, source | 可比公司表（市值、倍数、增速、毛利率、纳入或剔除理由），数据来自对应comps交叉验证 |
-| `fin_pages` | title, years, price, shares, left:[sections], right:[sections], source | 整页双栏“财务报表和主要财务比率”。section：`{title, unit, sheet, header_row, rows}`；rows读取`{label,row,key,scale,blank_zero}`（blank_zero：0显示为“—”）或派生`{label,op,of,over|plus,key,pct,digits,show}`，op为growth（基期≤0时为空）、ratio、ratio_avg（如ROE）、per_share、price_over（P/E等，>100倍或≤0显示N/M）、neg、add；`{label, header:true}`为分组小标题；key在整个fin_pages内共享 |
+| `fin_pages` | title（默认“财务报表和主要财务比率”，附录中自动编号）, years, price, shares, left:[sections], right:[sections], source | 整页双栏“财务报表和主要财务比率”。section：`{title, unit, sheet, header_row, rows}`；rows读取`{label,row,key,scale,blank_zero}`（blank_zero：0显示为“—”）或派生`{label,op,of,over|plus,key,pct,digits,show}`，op为growth（基期≤0时为空）、ratio、ratio_avg（如ROE）、per_share、price_over（P/E等，>100倍或≤0显示N/M）、neg、add；`{label, header:true}`为分组小标题；key在整个fin_pages内共享 |
 | `page_break` / `end_appendix` | — | 分页、退出附录模式 |
 
 封面股价图推荐`"price_chart": {"data": "market.json"}`（由`fetch_market_data.py`生成的逐日行情，自动绘制渐变面积图并叠加基准指数），`"performance": {"data": "market.json"}`生成涨跌幅比较表；历史不足的区间显示“—”。左栏内容过多会挤占右栏，栏目总高度需控制在一页内。

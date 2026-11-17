@@ -28,6 +28,14 @@ DEFAULT_DISCLAIMER = ("本报告基于研究截止日前的公开资料形成研
 
 
 # ---------- number display ----------
+APPENDIX_PREFIX = re.compile(r"^\s*(附录\s*[0-9一二三四五六七八九十]*|附表|研究补充)\s*[：:]\s*")
+
+
+def appendix_title(text: str) -> str:
+    """Strip hand-written 附录N：/附表：/研究补充： prefixes; numbering is generated."""
+    return APPENDIX_PREFIX.sub("", str(text)).strip()
+
+
 def fmt_num(v, digits=1):
     if v == "":
         return ""
@@ -733,17 +741,22 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
         if spec.get("reading_note"): r.paragraph(spec["reading_note"], size=8, color=t.muted)
     # ---- body ----
     chapter = 0; first = True
+    numbered = spec.get("appendix_numbering", True); in_app = False; appx = 0
     for i, b in enumerate(spec.get("body", [])):
         ty = b["type"]
         if ty == "h1":
             if b.get("appendix"):
-                r.begin_appendix(b["text"], page_break=b.get("page_break", True))
+                in_app = True
+                r.begin_appendix(b["text"] if not numbered else "附录", page_break=b.get("page_break", True))
             else:
                 chapter += 1
                 h = r.chapter(b["text"], number=b.get("number", chapter))
                 if first or b.get("page_break"): h.paragraph_format.page_break_before = True
             first = False
-        elif ty == "h2": r.subheading(b["text"])
+        elif ty == "h2":
+            if in_app and numbered:          # appendix sections: 附录1：…, 附录2：… (financial statements included)
+                appx += 1; r.subheading(f"附录{appx}：{appendix_title(b['text'])}")
+            else: r.subheading(b["text"])
         elif ty == "h3": r.h3(b["text"])
         elif ty == "p":
             r.paragraph(b["text"], lead=b.get("lead", _lead(b["text"]) if b.get("auto_lead", True) else None))
@@ -759,7 +772,9 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
             paths = [_resolve_image(it, base, figdir, it.get("id", f"fig{i}_{k}"), audits) for k, it in enumerate(b["items"])]
             r.figure_pair(paths, [it["caption"] for it in b["items"]], [it["source"] for it in b["items"]])
         elif ty == "fin_pages":
-            r.begin_columns(b.get("title", "附表：财务报表和主要财务比率"))
+            ft = appendix_title(b.get("title", "财务报表和主要财务比率"))
+            if in_app and numbered: appx += 1; ft = f"附录{appx}：{ft}"
+            r.begin_columns(ft, heading=in_app and numbered)
             shared = {}
             for side in ("left", "right"):
                 if side == "right": r.next_column()
@@ -811,7 +826,7 @@ def build(spec: dict, base: Path, out: Path, draft=False, static_toc=None) -> di
                         caption=b.get("caption", "可比公司估值"), source=b.get("source", "Tushare、团队分析"),
                         widths_cm=b.get("widths", [2.6, 2.0, 2.0, 2.2, 2.0, 6.3]), size=b.get("size", 8.0))
         elif ty == "page_break": r.page_break()
-        elif ty == "end_appendix": r.end_appendix()
+        elif ty == "end_appendix": r.end_appendix(); in_app = False
         else: raise ValueError(f"未知 block 类型：{ty}")
     if spec.get("rating"):
         r.rating_definitions(STOCK_RATINGS, INDUSTRY_RATINGS, RATING_INTRO)

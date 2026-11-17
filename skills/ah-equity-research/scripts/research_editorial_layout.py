@@ -486,14 +486,18 @@ class ResearchEditorialLayout:
                           size=8, align=['left', 'left', 'left'], keep_together=True)
 
     # ---------- two-column financial pages ----------
-    def begin_columns(self, title=None, gap_cm=.5):
-        """Start a new page in two equal columns (财务报表和主要财务比率)."""
+    def begin_columns(self, title=None, gap_cm=.5, heading=False):
+        """Start a new page in two equal columns (财务报表和主要财务比率). heading=True sets the title as a
+        level-2 heading so a numbered appendix section appears in the table of contents."""
         col = (self.full_width_cm - gap_cm) / 2
         if title:
             self._columns([self.full_width_cm], 0, WD_SECTION_START.NEW_PAGE)
-            h = self.doc.add_paragraph(); h.paragraph_format.space_after = Pt(6)
-            h.paragraph_format.line_spacing = Pt(20); _border(h, 'bottom', self.theme.navy, 10, 3)
-            _font(h.add_run(title), 13, self.theme.navy, True, self.theme.heading_east_asia)
+            if heading:
+                self.heading(title, 2)
+            else:
+                h = self.doc.add_paragraph(); h.paragraph_format.space_after = Pt(6)
+                h.paragraph_format.line_spacing = Pt(20); _border(h, 'bottom', self.theme.navy, 10, 3)
+                _font(h.add_run(title), 13, self.theme.navy, True, self.theme.heading_east_asia)
             self._columns([col, col], gap_cm, WD_SECTION_START.CONTINUOUS)
         else:
             self._columns([col, col], gap_cm, WD_SECTION_START.NEW_PAGE)
